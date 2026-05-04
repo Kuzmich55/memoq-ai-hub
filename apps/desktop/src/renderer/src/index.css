@@ -235,6 +235,57 @@ body,
   font-weight: 700;
 }
 
+.history-insights-panel {
+  padding: 16px;
+  border: 1px solid var(--app-color-border-secondary);
+  border-radius: 6px;
+  background: var(--app-color-surface);
+}
+
+.history-insights-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.history-active-filter-bar {
+  margin-bottom: 14px;
+}
+
+.history-insight-focus-alert {
+  margin-bottom: 14px;
+}
+
+.history-insight-stat {
+  min-height: 112px;
+  padding: 14px;
+  border: 1px solid var(--app-color-border-secondary);
+  border-radius: 6px;
+  background: var(--app-color-surface-card);
+}
+
+.history-issue-tag-row {
+  min-width: 0;
+}
+
+.history-issue-tag-row .ant-tag {
+  margin-inline-end: 0;
+}
+
+.history-issue-tag-active {
+  font-weight: 600;
+}
+
+.history-diagnostic-card {
+  border-color: var(--app-color-border-secondary);
+}
+
+.history-attempt-status-tag {
+  margin-inline-end: 0;
+}
+
 .sticky-panel {
   position: sticky;
   top: 24px;
@@ -496,6 +547,14 @@ body,
 
 .provider-model-library-item-active {
   background: var(--app-color-surface-soft);
+}
+
+.provider-insight-focus-alert {
+  border-color: var(--app-color-primary);
+}
+
+.provider-model-row-focused > td {
+  background: var(--app-color-surface-soft) !important;
 }
 
 .provider-inline-field .ant-input-affix-wrapper {

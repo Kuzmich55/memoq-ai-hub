@@ -81,8 +81,28 @@ const EMPTY_HISTORY_FILTERS = {
   provider: '',
   model: '',
   status: '',
+  issue: '',
   dateFrom: '',
   dateTo: ''
+};
+const SLOW_HISTORY_LATENCY_MS = 30000;
+const HISTORY_ISSUE_OPTIONS = ['failed', 'timeout', 'rate_limit', 'fallback', 'slow'];
+const DEFAULT_HISTORY_INSIGHTS = {
+  totalRequests: 0,
+  totalSegments: 0,
+  successRate: null,
+  avgLatencyMs: null,
+  p95LatencyMs: null,
+  failedCount: 0,
+  timeoutCount: 0,
+  rateLimitCount: 0,
+  exactCacheHitCount: 0,
+  adaptiveCacheHitCount: 0,
+  cacheHitCount: 0,
+  cacheHitRate: null,
+  batchFallbackCount: 0,
+  providerBreakdown: [],
+  attentionItems: []
 };
 const CONNECTION_SENSITIVE_PROVIDER_FIELDS = new Set(['apiKey', 'baseUrl', 'requestPath', 'type']);
 const TEMPLATE_PLACEHOLDER_PATTERN = /{{\s*([a-z-]+)(!)?\s*}}/g;
@@ -198,7 +218,10 @@ function createFallbackAppState() {
     },
     memoqMetadataMapping: { rules: [] },
     providerHub: { providers: [], summary: { enabled: 0, healthy: 0 } },
-    historyExplorer: { items: [] },
+    historyExplorer: {
+      items: [],
+      insights: DEFAULT_HISTORY_INSIGHTS
+    },
     updateCenter: {
       currentVersion: '',
       releaseChannel: 'stable',
@@ -295,7 +318,15 @@ function normalizeAppStatePayload(data = {}) {
     historyExplorer: {
       ...fallback.historyExplorer,
       ...(nextState.historyExplorer || {}),
-      items: Array.isArray(nextState.historyExplorer?.items) ? nextState.historyExplorer.items : fallback.historyExplorer.items
+      items: Array.isArray(nextState.historyExplorer?.items) ? nextState.historyExplorer.items : fallback.historyExplorer.items,
+      insights: nextState.historyExplorer?.insights && typeof nextState.historyExplorer.insights === 'object'
+        ? {
+          ...fallback.historyExplorer.insights,
+          ...nextState.historyExplorer.insights,
+          providerBreakdown: Array.isArray(nextState.historyExplorer.insights.providerBreakdown) ? nextState.historyExplorer.insights.providerBreakdown : [],
+          attentionItems: Array.isArray(nextState.historyExplorer.insights.attentionItems) ? nextState.historyExplorer.insights.attentionItems : []
+        }
+        : fallback.historyExplorer.insights
     },
     updateCenter: {
       ...fallback.updateCenter,
@@ -711,6 +742,200 @@ function formatLocalTimestamp(value, fallback = '-') {
   return formatTimestampForLocalDisplay(value, { fallback });
 }
 
+function getHistoryAttempts(entry = {}) {
+  return Array.isArray(entry.attempts) ? entry.attempts : [];
+}
+
+function getHistoryAttemptErrorCode(attempt = {}) {
+  return String(attempt?.errorCode || '').trim().toUpperCase();
+}
+
+function hasHistoryFallback(entry = {}) {
+  if (entry.finalizedByFallbackRoute === true) {
+    return true;
+  }
+  if (Array.isArray(entry.throughput?.fallbackReasons) && entry.throughput.fallbackReasons.length > 0) {
+    return true;
+  }
+  return getHistoryAttempts(entry).some((attempt) => attempt?.finalizedByFallbackRoute === true);
+}
+
+function matchesHistoryIssue(entry = {}, issue = '') {
+  const normalizedIssue = String(issue || '').trim().toLowerCase();
+  if (!normalizedIssue || !HISTORY_ISSUE_OPTIONS.includes(normalizedIssue)) {
+    return true;
+  }
+
+  if (normalizedIssue === 'failed') {
+    return String(entry?.status || '').trim().toLowerCase() === 'failed';
+  }
+
+  if (normalizedIssue === 'timeout') {
+    return getHistoryAttempts(entry).some((attempt) => {
+      const errorCode = getHistoryAttemptErrorCode(attempt);
+      return errorCode === 'PROVIDER_TIMEOUT' || errorCode === 'TRANSLATION_TIMEOUT';
+    });
+  }
+
+  if (normalizedIssue === 'rate_limit') {
+    return getHistoryAttempts(entry).some((attempt) => getHistoryAttemptErrorCode(attempt) === 'PROVIDER_RATE_LIMITED');
+  }
+
+  if (normalizedIssue === 'fallback') {
+    return hasHistoryFallback(entry);
+  }
+
+  if (normalizedIssue === 'slow') {
+    const latencyMs = Number(entry?.latencyMs);
+    return Number.isFinite(latencyMs) && latencyMs > SLOW_HISTORY_LATENCY_MS;
+  }
+
+  return true;
+}
+
+function getHistoryIssueLabel(t, issue = '') {
+  const normalizedIssue = String(issue || '').trim().toLowerCase();
+  if (!normalizedIssue) {
+    return '';
+  }
+  const key = `history.issue.${normalizedIssue}`;
+  const label = t(key);
+  return label === key ? normalizedIssue : label;
+}
+
+function buildHistoryActiveFilterTags(filters = {}, t) {
+  const labelsByField = {
+    search: t('history.search'),
+    provider: t('history.providerFilter'),
+    model: t('history.modelFilter'),
+    projectId: t('history.projectIdFilter'),
+    subject: t('history.subjectFilter'),
+    status: t('history.statusFilter'),
+    issue: t('history.issueFilter'),
+    dateFrom: t('history.dateFrom'),
+    dateTo: t('history.dateTo')
+  };
+
+  return Object.entries(filters)
+    .map(([field, value]) => {
+      const normalizedValue = String(value || '').trim();
+      if (!normalizedValue) {
+        return null;
+      }
+      const displayValue = field === 'issue'
+        ? getHistoryIssueLabel(t, normalizedValue)
+        : field === 'status'
+          ? t(`history.status${normalizedValue === 'success' ? 'Success' : 'Failed'}`)
+          : normalizedValue;
+      return {
+        field,
+        value: normalizedValue,
+        label: `${labelsByField[field] || field}: ${displayValue}`
+      };
+    })
+    .filter(Boolean);
+}
+
+function getHistoryInsightFocusMessage(t, focus = {}) {
+  if (!focus || typeof focus !== 'object') {
+    return '';
+  }
+  if (focus.code) {
+    return t(`history.insights.attention.${focus.code}`, focus.values || {});
+  }
+  if (focus.provider || focus.model) {
+    return t('history.insights.providerFocusMessage', {
+      provider: focus.provider || '-',
+      model: focus.model || '-'
+    });
+  }
+  return t('history.insights.genericFocusMessage');
+}
+
+function hasHistoryCacheHit(entry = {}) {
+  return getHistoryAttempts(entry).some((attempt) => {
+    const cacheKind = String(attempt?.cacheKind || '').trim().toLowerCase();
+    return cacheKind === 'exact' || cacheKind === 'adaptive';
+  });
+}
+
+function buildHistoryIssueTags(record = {}) {
+  const tags = [];
+  const addTag = (key, color = 'default', issue = '') => {
+    if (!tags.some((tag) => tag.key === key)) {
+      tags.push({ key, color, issue });
+    }
+  };
+
+  if (matchesHistoryIssue(record, 'failed')) {
+    addTag('failed', 'red', 'failed');
+  }
+  if (matchesHistoryIssue(record, 'timeout')) {
+    addTag('timeout', 'orange', 'timeout');
+  }
+  if (matchesHistoryIssue(record, 'rate_limit')) {
+    addTag('rate_limit', 'gold', 'rate_limit');
+  }
+  if (matchesHistoryIssue(record, 'fallback')) {
+    addTag('fallback', 'blue', 'fallback');
+  }
+  if (matchesHistoryIssue(record, 'slow')) {
+    addTag('slow', 'volcano', 'slow');
+  }
+  if (hasHistoryCacheHit(record)) {
+    addTag('cache_hit', 'green', '');
+  }
+
+  return tags;
+}
+
+function getHistoryAttemptErrorMessage(attempt = {}) {
+  return String(attempt?.errorCode || attempt?.error?.code || attempt?.error?.message || attempt?.message || '').trim();
+}
+
+function buildHistoryDiagnosticSummary(record = {}) {
+  const attempts = getHistoryAttempts(record);
+  const issueTags = buildHistoryIssueTags(record);
+  const errorCodes = Array.from(new Set(attempts
+    .map((attempt) => getHistoryAttemptErrorMessage(attempt))
+    .filter(Boolean)));
+  const throughputFallbackReasons = Array.isArray(record?.throughput?.fallbackReasons)
+    ? record.throughput.fallbackReasons.map((reason) => String(reason || '').trim()).filter(Boolean)
+    : [];
+  const fallbackStages = Array.from(new Set(attempts
+    .map((attempt) => String(attempt?.fallbackStage || '').trim())
+    .filter(Boolean)));
+
+  return {
+    issueTags,
+    issueCount: issueTags.filter((tag) => tag.issue).length,
+    totalLatencyMs: Number.isFinite(Number(record?.latencyMs)) ? Number(record.latencyMs) : null,
+    attemptCount: attempts.length,
+    fallbackActive: hasHistoryFallback(record),
+    fallbackReasons: Array.from(new Set([...throughputFallbackReasons, ...fallbackStages])),
+    primaryError: errorCodes[0] || '',
+    errorCodes
+  };
+}
+
+function buildHistoryAttemptRows(record = {}) {
+  return getHistoryAttempts(record).map((attempt, index) => ({
+    key: `${record?.id || 'history'}-${index}`,
+    index: index + 1,
+    route: String(attempt?.routeKind || attempt?.effectiveExecutionMode || '').trim(),
+    provider: String(attempt?.providerName || attempt?.providerId || '').trim(),
+    model: String(attempt?.model || '').trim(),
+    mode: String(attempt?.effectiveExecutionMode || (attempt?.batch ? 'batch' : '')).trim(),
+    success: attempt?.success === true,
+    latencyMs: Number.isFinite(Number(attempt?.latencyMs)) ? Number(attempt.latencyMs) : null,
+    cacheKind: String(attempt?.cacheKind || '').trim(),
+    error: getHistoryAttemptErrorMessage(attempt),
+    fallbackStage: String(attempt?.fallbackStage || '').trim(),
+    batchSize: Number.isFinite(Number(attempt?.batchSize)) ? Number(attempt.batchSize) : null,
+    retryCount: Number.isFinite(Number(attempt?.retryCount)) ? Number(attempt.retryCount) : null
+  }));
+}
+
 function filterHistoryItems(items = [], filters = {}) {
   const search = normalizeFilterText(filters.search);
   const projectId = normalizeFilterText(filters.projectId);
@@ -718,6 +943,7 @@ function filterHistoryItems(items = [], filters = {}) {
   const provider = normalizeFilterText(filters.provider);
   const model = normalizeFilterText(filters.model);
   const status = normalizeFilterText(filters.status);
+  const issue = normalizeFilterText(filters.issue);
   const dateFrom = parseFilterDate(filters.dateFrom);
   const dateTo = parseFilterDate(filters.dateTo, true);
 
@@ -753,6 +979,10 @@ function filterHistoryItems(items = [], filters = {}) {
     }
 
     if (status && String(item.status || '').toLowerCase() !== status) {
+      return false;
+    }
+
+    if (issue && !matchesHistoryIssue(item, issue)) {
       return false;
     }
 
@@ -935,6 +1165,61 @@ function formatHistoryThroughputValue(record) {
     parts.push(`fallback: ${throughput.fallbackReasons.join(', ')}`);
   }
   return parts.join(' | ');
+}
+
+function formatInsightPercent(value, fallback = '-') {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return fallback;
+  }
+  return `${normalized.toFixed(1).replace(/\.0$/, '')}%`;
+}
+
+function formatInsightLatency(value, fallback = '-') {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return fallback;
+  }
+  if (normalized >= 1000) {
+    return `${(normalized / 1000).toFixed(1).replace(/\.0$/, '')}s`;
+  }
+  return `${Math.round(normalized)}ms`;
+}
+
+function getAttentionAlertType(severity = '') {
+  if (severity === 'error') return 'error';
+  if (severity === 'warning') return 'warning';
+  return 'info';
+}
+
+function renderHistoryIssueTags(t, record = {}, activeIssue = '', options = {}) {
+  const tags = buildHistoryIssueTags(record);
+  const maxVisible = Number(options.maxVisible || tags.length || 0);
+  const visibleTags = tags.slice(0, maxVisible);
+  const hiddenCount = Math.max(0, tags.length - visibleTags.length);
+  const normalizedActiveIssue = String(activeIssue || '').trim().toLowerCase();
+
+  if (!tags.length) {
+    return <Text type="secondary">-</Text>;
+  }
+
+  return (
+    <Space wrap size={[4, 4]} className="history-issue-tag-row">
+      {visibleTags.map((tag) => {
+        const isActive = normalizedActiveIssue && tag.issue === normalizedActiveIssue;
+        return (
+          <Tag
+            key={tag.key}
+            color={tag.color}
+            className={isActive ? 'history-issue-tag-active' : ''}
+          >
+            {t(`history.issueTag.${tag.key}`)}
+          </Tag>
+        );
+      })}
+      {hiddenCount > 0 ? <Tag>+{hiddenCount}</Tag> : null}
+    </Space>
+  );
 }
 
 function buildAssetPreviewRows(preview) {
@@ -1255,6 +1540,8 @@ export default function App() {
   const [discoveredProviderModels, setDiscoveredProviderModels] = useState({});
   const [historyFilterDraft, setHistoryFilterDraft] = useState(() => createEmptyHistoryFilters());
   const [historyFilters, setHistoryFilters] = useState(() => createEmptyHistoryFilters());
+  const [historyInsightFocus, setHistoryInsightFocus] = useState(null);
+  const [providerInsightFocus, setProviderInsightFocus] = useState(null);
   const [navCollapsed, setNavCollapsed] = useState(false);
   const [assetPreviewOpen, setAssetPreviewOpen] = useState(false);
   const [assetPreviewLoading, setAssetPreviewLoading] = useState(false);
@@ -1564,6 +1851,11 @@ export default function App() {
   const visibleHistoryItems = useMemo(
     () => filterHistoryItems(state?.historyExplorer?.items || [], historyFilters),
     [state, historyFilters]
+  );
+  const historyInsights = state?.historyExplorer?.insights || DEFAULT_HISTORY_INSIGHTS;
+  const activeHistoryFilterTags = useMemo(
+    () => buildHistoryActiveFilterTags(historyFilters, t),
+    [historyFilters, t]
   );
   const historyFilterProviderOptions = useMemo(() => {
     const values = Array.from(new Set((state?.historyExplorer?.items || []).map((item) => String(item.providerName || '').trim()).filter(Boolean)));
@@ -2162,14 +2454,60 @@ export default function App() {
   }
 
   async function applyHistoryFilters() {
+    setHistoryInsightFocus(null);
     setHistoryFilters(historyFilterDraft);
     setSelectedHistoryIds([]);
     setSelectedHistoryId('');
     await refresh(historyFilterDraft);
   }
 
+  function updateHistoryFilterDraftField(field, value) {
+    setHistoryInsightFocus(null);
+    setHistoryFilterDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  async function applyHistoryInsightFilter(filter = {}, focus = {}) {
+    const nextFilters = {
+      ...createEmptyHistoryFilters(),
+      ...(filter && typeof filter === 'object' ? filter : {})
+    };
+    setHistoryInsightFocus({
+      ...(focus && typeof focus === 'object' ? focus : {}),
+      filter: nextFilters
+    });
+    setHistoryFilterDraft(nextFilters);
+    setHistoryFilters(nextFilters);
+    setSelectedHistoryIds([]);
+    setSelectedHistoryId('');
+    await refresh(nextFilters);
+  }
+
+  function openInsightProvider(providerEntryId = '', focus = {}) {
+    const normalizedProviderId = String(providerEntryId || '').trim();
+    if (normalizedProviderId) {
+      setProviderId(normalizedProviderId);
+    }
+    setProviderSearch('');
+    setProviderInsightFocus({
+      ...(focus && typeof focus === 'object' ? focus : {}),
+      providerId: normalizedProviderId
+    });
+    setActivePage('providers');
+  }
+
+  function selectProvider(providerEntryId = '') {
+    setProviderInsightFocus(null);
+    setProviderId(providerEntryId);
+  }
+
+  function returnFromProviderInsightFocus() {
+    setActivePage('history');
+  }
+
   async function resetHistoryFilters() {
     const emptyFilters = createEmptyHistoryFilters();
+    setHistoryInsightFocus(null);
+    setProviderInsightFocus(null);
     setHistoryFilterDraft(emptyFilters);
     setHistoryFilters(emptyFilters);
     setSelectedHistoryIds([]);
@@ -2857,7 +3195,7 @@ export default function App() {
               testingProvider={testingProvider}
               discoveringProviderModels={discoveringProviderModels}
               onCreateProvider={createProvider}
-              onSelectProvider={setProviderId}
+              onSelectProvider={selectProvider}
               onProviderSearchChange={setProviderSearch}
               onPatchProvider={patchCurrentProvider}
               onDiscardProviderChanges={discardCurrentProviderChanges}
@@ -2882,6 +3220,10 @@ export default function App() {
               getProviderTypeLabel={getProviderTypeLabel}
               buildProviderRequestPreview={buildProviderRequestPreview}
               formatLocalTimestamp={formatLocalTimestamp}
+              insightFocus={providerInsightFocus}
+              focusedModelName={providerInsightFocus?.model || ''}
+              onBackToHistory={returnFromProviderInsightFocus}
+              onClearInsightFocus={() => setProviderInsightFocus(null)}
             />
           )}
 
@@ -2914,6 +3256,184 @@ export default function App() {
                 )}
               >
                 <Space direction="vertical" size={16} style={{ display: 'flex', marginBottom: 16 }}>
+                  <div className="history-insights-panel">
+                    <div className="history-insights-header">
+                      <div>
+                        <Text strong>{t('history.insights.title')}</Text>
+                        <div><Text type="secondary">{t('history.insights.subtitle')}</Text></div>
+                      </div>
+                      <Tag color="blue">{t('history.insights.scope', { count: historyInsights.totalRequests || 0 })}</Tag>
+                    </div>
+                    {activeHistoryFilterTags.length ? (
+                      <Space wrap size={[8, 8]} className="history-active-filter-bar">
+                        {activeHistoryFilterTags.map((item) => (
+                          <Tag key={item.field} color="blue">{item.label}</Tag>
+                        ))}
+                        <Button size="small" type="link" onClick={resetHistoryFilters}>
+                          {t('history.clearInsightFilters')}
+                        </Button>
+                      </Space>
+                    ) : null}
+                    {historyInsightFocus ? (
+                      <Alert
+                        className="history-insight-focus-alert"
+                        type="info"
+                        showIcon
+                        message={t('history.insights.focusTitle')}
+                        description={t('history.insights.focusDescription', {
+                          source: getHistoryInsightFocusMessage(t, historyInsightFocus),
+                          count: historyInsights.totalRequests || 0
+                        })}
+                        action={(
+                          <Button size="small" onClick={() => setHistoryInsightFocus(null)}>
+                            {t('common.dismiss')}
+                          </Button>
+                        )}
+                      />
+                    ) : null}
+                    {(historyInsights.totalRequests || 0) > 0 ? (
+                      <Space direction="vertical" size={14} style={{ display: 'flex' }}>
+                        <Row gutter={[12, 12]}>
+                          <Col xs={24} sm={12} lg={6}>
+                            <div className="history-insight-stat">
+                              <Statistic title={t('history.insights.successRate')} value={formatInsightPercent(historyInsights.successRate)} />
+                              <Text type="secondary">{t('history.insights.totalSegments', { count: historyInsights.totalSegments || 0 })}</Text>
+                            </div>
+                          </Col>
+                          <Col xs={24} sm={12} lg={6}>
+                            <div className="history-insight-stat">
+                              <Statistic title={t('history.insights.avgLatency')} value={formatInsightLatency(historyInsights.avgLatencyMs)} />
+                              <Text type="secondary">{t('history.insights.failedRequests', { count: historyInsights.failedCount || 0 })}</Text>
+                            </div>
+                          </Col>
+                          <Col xs={24} sm={12} lg={6}>
+                            <div className="history-insight-stat">
+                              <Statistic title={t('history.insights.p95Latency')} value={formatInsightLatency(historyInsights.p95LatencyMs)} />
+                              <Text type="secondary">{t('history.insights.fallbackCount', { count: historyInsights.batchFallbackCount || 0 })}</Text>
+                            </div>
+                          </Col>
+                          <Col xs={24} sm={12} lg={6}>
+                            <div className="history-insight-stat">
+                              <Statistic title={t('history.insights.cacheHitRate')} value={formatInsightPercent(historyInsights.cacheHitRate)} />
+                              <Text type="secondary">
+                                {t('history.insights.cacheHitBreakdown', {
+                                  exact: historyInsights.exactCacheHitCount || 0,
+                                  adaptive: historyInsights.adaptiveCacheHitCount || 0
+                                })}
+                              </Text>
+                            </div>
+                          </Col>
+                        </Row>
+                        <Row gutter={[12, 12]} align="top">
+                          <Col xs={24} xl={15}>
+                            <Table
+                              size="small"
+                              pagination={false}
+                              rowKey="key"
+                              dataSource={(historyInsights.providerBreakdown || []).slice(0, 5)}
+                              locale={{ emptyText: t('history.insights.noProviderBreakdown') }}
+                              columns={[
+                                {
+                                  title: t('common.provider'),
+                                  dataIndex: 'providerName',
+                                  render: (value, record) => (
+                                    <Space direction="vertical" size={0}>
+                                      <Text strong>{value || '-'}</Text>
+                                      <Text type="secondary">{record.model || '-'}</Text>
+                                    </Space>
+                                  )
+                                },
+                                { title: t('history.insights.requests'), dataIndex: 'requestCount', width: 96 },
+                                {
+                                  title: t('history.insights.providerSuccessRate'),
+                                  dataIndex: 'successRate',
+                                  width: 120,
+                                  render: (value) => formatInsightPercent(value)
+                                },
+                                {
+                                  title: t('history.insights.providerAvgLatency'),
+                                  dataIndex: 'avgLatencyMs',
+                                  width: 120,
+                                  render: (value) => formatInsightLatency(value)
+                                },
+                                { title: t('history.insights.providerFallbacks'), dataIndex: 'fallbackCount', width: 100 },
+                                {
+                                  title: t('common.actions'),
+                                  width: 150,
+                                  render: (_, record) => (
+                                    <Space size={4}>
+                                      <Button
+                                        type="link"
+                                        size="small"
+                                        onClick={() => void applyHistoryInsightFilter(
+                                          { provider: record.providerName || record.providerId || '', model: record.model || '' },
+                                          { provider: record.providerName || record.providerId || '', model: record.model || '', source: 'providerBreakdown' }
+                                        )}
+                                      >
+                                        {t('history.insights.filterAction')}
+                                      </Button>
+                                      <Button
+                                        type="link"
+                                        size="small"
+                                        onClick={() => openInsightProvider(record.providerId, {
+                                          provider: record.providerName || record.providerId || '',
+                                          model: record.model || '',
+                                          source: 'providerBreakdown'
+                                        })}
+                                        disabled={!record.providerId}
+                                      >
+                                        {t('history.insights.configureAction')}
+                                      </Button>
+                                    </Space>
+                                  )
+                                }
+                              ]}
+                            />
+                          </Col>
+                          <Col xs={24} xl={9}>
+                            {(historyInsights.attentionItems || []).length ? (
+                              <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+                                {(historyInsights.attentionItems || []).map((item) => (
+                                  <Alert
+                                    key={item.key}
+                                    type={getAttentionAlertType(item.severity)}
+                                    showIcon
+                                    message={t(`history.insights.attention.${item.code}`, item.values || {})}
+                                    action={item.filter ? (
+                                      <Button size="small" onClick={() => void applyHistoryInsightFilter(item.filter, {
+                                        code: item.code,
+                                        values: item.values || {},
+                                        severity: item.severity || '',
+                                        source: 'attention'
+                                      })}
+                                      >
+                                        {t('history.insights.viewRecordsAction')}
+                                      </Button>
+                                    ) : item.providerId ? (
+                                      <Button size="small" onClick={() => openInsightProvider(item.providerId, {
+                                        code: item.code,
+                                        values: item.values || {},
+                                        severity: item.severity || '',
+                                        model: item.model || '',
+                                        source: 'attention'
+                                      })}
+                                      >
+                                        {t('history.insights.configureAction')}
+                                      </Button>
+                                    ) : null}
+                                  />
+                                ))}
+                              </Space>
+                            ) : (
+                              <Alert type="success" showIcon message={t('history.insights.noAttention')} />
+                            )}
+                          </Col>
+                        </Row>
+                      </Space>
+                    ) : (
+                      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('history.insights.empty')} />
+                    )}
+                  </div>
                   <Row gutter={12}>
                     <Col span={12}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
@@ -2921,7 +3441,7 @@ export default function App() {
                         <Input.Search
                           allowClear
                           value={historyFilterDraft.search}
-                          onChange={(event) => setHistoryFilterDraft((current) => ({ ...current, search: event.target.value }))}
+                          onChange={(event) => updateHistoryFilterDraftField('search', event.target.value)}
                           onSearch={applyHistoryFilters}
                           placeholder={t('history.searchPlaceholder')}
                         />
@@ -2935,7 +3455,7 @@ export default function App() {
                           showSearch
                           value={historyFilterDraft.provider || undefined}
                           options={historyFilterProviderOptions}
-                          onChange={(value) => setHistoryFilterDraft((current) => ({ ...current, provider: value || '' }))}
+                          onChange={(value) => updateHistoryFilterDraftField('provider', value || '')}
                           placeholder={t('history.providerPlaceholder')}
                         />
                       </Space>
@@ -2948,31 +3468,31 @@ export default function App() {
                           showSearch
                           value={historyFilterDraft.model || undefined}
                           options={historyFilterModelOptions}
-                          onChange={(value) => setHistoryFilterDraft((current) => ({ ...current, model: value || '' }))}
+                          onChange={(value) => updateHistoryFilterDraftField('model', value || '')}
                           placeholder={t('history.modelPlaceholder')}
                         />
                       </Space>
                     </Col>
                   </Row>
                   <Row gutter={12}>
-                    <Col span={6}>
+                    <Col span={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.projectIdFilter')}</Text>
                         <Input
                           allowClear
                           value={historyFilterDraft.projectId}
-                          onChange={(event) => setHistoryFilterDraft((current) => ({ ...current, projectId: event.target.value }))}
+                          onChange={(event) => updateHistoryFilterDraftField('projectId', event.target.value)}
                           placeholder={t('history.projectIdPlaceholder')}
                         />
                       </Space>
                     </Col>
-                    <Col span={6}>
+                    <Col span={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.subjectFilter')}</Text>
                         <Input
                           allowClear
                           value={historyFilterDraft.subject}
-                          onChange={(event) => setHistoryFilterDraft((current) => ({ ...current, subject: event.target.value }))}
+                          onChange={(event) => updateHistoryFilterDraftField('subject', event.target.value)}
                           placeholder={t('history.subjectPlaceholder')}
                         />
                       </Space>
@@ -2987,8 +3507,23 @@ export default function App() {
                             { value: 'success', label: t('history.statusSuccess') },
                             { value: 'failed', label: t('history.statusFailed') }
                           ]}
-                          onChange={(value) => setHistoryFilterDraft((current) => ({ ...current, status: value || '' }))}
+                          onChange={(value) => updateHistoryFilterDraftField('status', value || '')}
                           placeholder={t('history.statusPlaceholder')}
+                        />
+                      </Space>
+                    </Col>
+                    <Col span={4}>
+                      <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+                        <Text strong>{t('history.issueFilter')}</Text>
+                        <Select
+                          allowClear
+                          value={historyFilterDraft.issue || undefined}
+                          options={HISTORY_ISSUE_OPTIONS.map((issue) => ({
+                            value: issue,
+                            label: getHistoryIssueLabel(t, issue)
+                          }))}
+                          onChange={(value) => updateHistoryFilterDraftField('issue', value || '')}
+                          placeholder={t('history.issuePlaceholder')}
                         />
                       </Space>
                     </Col>
@@ -2998,7 +3533,7 @@ export default function App() {
                         <Input
                           allowClear
                           value={historyFilterDraft.dateFrom}
-                          onChange={(event) => setHistoryFilterDraft((current) => ({ ...current, dateFrom: event.target.value }))}
+                          onChange={(event) => updateHistoryFilterDraftField('dateFrom', event.target.value)}
                           placeholder="YYYY-MM-DD"
                         />
                       </Space>
@@ -3009,7 +3544,7 @@ export default function App() {
                         <Input
                           allowClear
                           value={historyFilterDraft.dateTo}
-                          onChange={(event) => setHistoryFilterDraft((current) => ({ ...current, dateTo: event.target.value }))}
+                          onChange={(event) => updateHistoryFilterDraftField('dateTo', event.target.value)}
                           placeholder="YYYY-MM-DD"
                         />
                       </Space>
@@ -3054,6 +3589,11 @@ export default function App() {
                       dataIndex: 'status',
                       width: 120,
                       render: (value) => <Tag color={value === 'success' ? 'green' : 'red'}>{value === 'success' ? t('history.statusSuccess') : t('history.statusFailed')}</Tag>
+                    },
+                    {
+                      title: t('history.issues'),
+                      width: 190,
+                      render: (_, record) => renderHistoryIssueTags(t, record, historyFilters.issue, { maxVisible: 3 })
                     },
                     {
                       title: t('history.submittedAt'),
@@ -3104,6 +3644,111 @@ export default function App() {
       >
         {currentHistoryRecord ? (
           <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+            <Card size="small" title={t('history.diagnosticSummary')} className="history-diagnostic-card">
+              {(() => {
+                const diagnosticSummary = buildHistoryDiagnosticSummary(currentHistoryRecord);
+                return (
+                  <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+                    <Space wrap size={[8, 8]}>
+                      {renderHistoryIssueTags(t, currentHistoryRecord, historyFilters.issue)}
+                    </Space>
+                    <Descriptions bordered column={1} size="small">
+                      <Descriptions.Item label={t('history.diagnosticIssueCount')}>
+                        {diagnosticSummary.issueCount}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('history.diagnosticTotalLatency')}>
+                        {formatInsightLatency(diagnosticSummary.totalLatencyMs)}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('history.diagnosticAttemptCount')}>
+                        {diagnosticSummary.attemptCount}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('history.diagnosticFallback')}>
+                        {diagnosticSummary.fallbackActive ? t('common.enabled') : t('common.disabled')}
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('history.diagnosticFallbackReasons')}>
+                        <HoverText value={diagnosticSummary.fallbackReasons.join(', ') || t('history.none')} />
+                      </Descriptions.Item>
+                      <Descriptions.Item label={t('history.diagnosticPrimaryError')}>
+                        <HoverText value={diagnosticSummary.primaryError || t('history.none')} />
+                      </Descriptions.Item>
+                    </Descriptions>
+                  </Space>
+                );
+              })()}
+            </Card>
+            <Card size="small" title={t('history.attemptTimeline')}>
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="key"
+                dataSource={buildHistoryAttemptRows(currentHistoryRecord)}
+                locale={{ emptyText: t('history.noAttempts') }}
+                columns={[
+                  { title: '#', dataIndex: 'index', width: 56 },
+                  {
+                    title: t('history.attemptRoute'),
+                    width: 160,
+                    render: (_, record) => (
+                      <Space direction="vertical" size={0}>
+                        <Text>{record.route || t('history.unknown')}</Text>
+                        <Text type="secondary">{record.provider || t('history.unknown')}</Text>
+                      </Space>
+                    )
+                  },
+                  {
+                    title: t('history.model'),
+                    dataIndex: 'model',
+                    width: 150,
+                    render: (value) => <HoverText value={value || t('history.unknown')} className="table-cell-ellipsis" />
+                  },
+                  {
+                    title: t('history.attemptMode'),
+                    dataIndex: 'mode',
+                    width: 100,
+                    render: (value, record) => (
+                      <Space wrap size={[4, 4]}>
+                        <Tag>{value || t('history.unknown')}</Tag>
+                        {record.batchSize ? <Tag>{t('history.attemptBatchSize', { count: record.batchSize })}</Tag> : null}
+                      </Space>
+                    )
+                  },
+                  {
+                    title: t('history.status'),
+                    dataIndex: 'success',
+                    width: 100,
+                    render: (value) => (
+                      <Tag className="history-attempt-status-tag" color={value ? 'green' : 'red'}>
+                        {value ? t('history.statusSuccess') : t('history.statusFailed')}
+                      </Tag>
+                    )
+                  },
+                  {
+                    title: t('history.attemptLatency'),
+                    dataIndex: 'latencyMs',
+                    width: 100,
+                    render: (value) => formatInsightLatency(value)
+                  },
+                  {
+                    title: t('history.attemptCache'),
+                    dataIndex: 'cacheKind',
+                    width: 100,
+                    render: (value) => value ? <Tag color="green">{value}</Tag> : <Text type="secondary">-</Text>
+                  },
+                  {
+                    title: t('history.attemptError'),
+                    dataIndex: 'error',
+                    width: 180,
+                    render: (value) => <HoverText value={value || '-'} className="table-cell-ellipsis" />
+                  },
+                  {
+                    title: t('history.attemptFallbackStage'),
+                    dataIndex: 'fallbackStage',
+                    width: 130,
+                    render: (value) => value ? <Tag color="blue">{value}</Tag> : <Text type="secondary">-</Text>
+                  }
+                ]}
+              />
+            </Card>
             <Descriptions bordered column={1} size="small">
               <Descriptions.Item label={t('history.submittedId')}><HoverText value={currentHistoryRecord.requestId} /></Descriptions.Item>
               <Descriptions.Item label={t('history.projectId')}><HoverText value={currentHistoryRecord.projectId} /></Descriptions.Item>

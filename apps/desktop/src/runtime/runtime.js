@@ -77,6 +77,7 @@ const {
   buildHistoryEntry: buildRuntimeHistoryEntry
 } = require('./runtimeHistoryBuilder');
 const {
+  buildHistoryInsights,
   buildHistoryMetrics,
   buildHistorySummary,
   buildIntegrationConfig
@@ -2407,6 +2408,7 @@ async function createRuntime(options = {}) {
         }
       },
       historyExplorer: {
+        insights: buildHistoryInsights(history),
         items: history.map((entry) => ({
           ...entry,
           ...buildHistorySummary(entry)

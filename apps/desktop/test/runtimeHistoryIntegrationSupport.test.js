@@ -2,10 +2,145 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  buildHistoryInsights,
   buildHistoryMetrics,
   buildHistorySummary,
   buildIntegrationConfig
 } = require('../src/runtime/runtimeHistoryIntegrationSupport');
+
+test('runtime history integration support returns empty insights for empty history', () => {
+  assert.deepEqual(buildHistoryInsights([]), {
+    totalRequests: 0,
+    totalSegments: 0,
+    successCount: 0,
+    failedCount: 0,
+    successRate: null,
+    avgLatencyMs: null,
+    p95LatencyMs: null,
+    timeoutCount: 0,
+    rateLimitCount: 0,
+    exactCacheHitCount: 0,
+    adaptiveCacheHitCount: 0,
+    cacheHitCount: 0,
+    cacheHitRate: null,
+    batchFallbackCount: 0,
+    providerBreakdown: [],
+    attentionItems: []
+  });
+});
+
+test('runtime history integration support builds aggregate history insights', () => {
+  const insights = buildHistoryInsights([
+    {
+      providerId: 'provider-a',
+      providerName: 'OpenAI',
+      model: 'gpt-5.4',
+      status: 'success',
+      latencyMs: 100,
+      segmentCount: 2,
+      attempts: [{ cacheKind: 'exact' }]
+    },
+    {
+      providerId: 'provider-a',
+      providerName: 'OpenAI',
+      model: 'gpt-5.4',
+      status: 'failed',
+      latencyMs: '400',
+      segments: [{}, {}, {}],
+      attempts: [{ errorCode: 'PROVIDER_TIMEOUT' }]
+    },
+    {
+      providerId: 'provider-a',
+      providerName: 'OpenAI',
+      model: 'gpt-5.4',
+      status: 'success',
+      latencyMs: 31000,
+      segmentCount: 1,
+      finalizedByFallbackRoute: true,
+      attempts: [{ errorCode: 'PROVIDER_RATE_LIMITED' }]
+    },
+    {
+      providerId: 'provider-b',
+      providerName: 'Compatible',
+      model: 'deepseek-chat',
+      status: 'success',
+      latencyMs: 45000,
+      segmentCount: 4,
+      attempts: [{ cacheKind: 'adaptive' }]
+    }
+  ]);
+
+  assert.equal(insights.totalRequests, 4);
+  assert.equal(insights.totalSegments, 10);
+  assert.equal(insights.successCount, 3);
+  assert.equal(insights.failedCount, 1);
+  assert.equal(insights.successRate, 75);
+  assert.equal(insights.avgLatencyMs, 19125);
+  assert.equal(insights.p95LatencyMs, 45000);
+  assert.equal(insights.timeoutCount, 1);
+  assert.equal(insights.rateLimitCount, 1);
+  assert.equal(insights.exactCacheHitCount, 1);
+  assert.equal(insights.adaptiveCacheHitCount, 1);
+  assert.equal(insights.cacheHitCount, 2);
+  assert.equal(insights.cacheHitRate, 50);
+  assert.equal(insights.batchFallbackCount, 1);
+  assert.equal(insights.providerBreakdown.length, 2);
+  assert.deepEqual(insights.providerBreakdown[0], {
+    key: 'provider-a::gpt-5.4',
+    providerId: 'provider-a',
+    providerName: 'OpenAI',
+    model: 'gpt-5.4',
+    requestCount: 3,
+    segmentCount: 6,
+    successRate: 66.7,
+    avgLatencyMs: 10500,
+    failedCount: 1,
+    fallbackCount: 1
+  });
+  assert.deepEqual(
+    insights.attentionItems.map((item) => item.code),
+    ['successRateWarning', 'p95LatencyHigh', 'timeoutsPresent', 'rateLimitsPresent', 'batchFallbacksPresent']
+  );
+  assert.deepEqual(
+    insights.attentionItems.map((item) => item.filter),
+    [
+      { issue: 'failed' },
+      { issue: 'slow' },
+      { issue: 'timeout' },
+      { issue: 'rate_limit' },
+      { issue: 'fallback' }
+    ]
+  );
+});
+
+test('runtime history integration support surfaces critical and weakest-provider attention items', () => {
+  const insights = buildHistoryInsights([
+    { providerId: 'provider-a', providerName: 'Primary', model: 'm1', status: 'failed', latencyMs: 100 },
+    { providerId: 'provider-a', providerName: 'Primary', model: 'm1', status: 'failed', latencyMs: 200 },
+    { providerId: 'provider-a', providerName: 'Primary', model: 'm1', status: 'success', latencyMs: 300 },
+    { providerId: 'provider-b', providerName: 'Fallback', model: 'm2', status: 'success', latencyMs: 100 }
+  ]);
+
+  assert.equal(insights.successRate, 50);
+  assert.deepEqual(
+    insights.attentionItems.map((item) => ({ severity: item.severity, code: item.code })),
+    [
+      { severity: 'error', code: 'successRateCritical' },
+      { severity: 'error', code: 'weakProvider' }
+    ]
+  );
+  assert.deepEqual(insights.attentionItems[1].values, {
+    provider: 'Primary',
+    model: 'm1',
+    value: 33.3
+  });
+  assert.deepEqual(insights.attentionItems[1].filter, {
+    provider: 'Primary',
+    model: 'm1'
+  });
+  assert.equal(insights.attentionItems[1].providerId, 'provider-a');
+  assert.equal(insights.attentionItems[1].model, 'm1');
+});
 
 test('runtime history integration support returns null metrics when no matching provider entries exist', () => {
   const originalNow = Date.now;

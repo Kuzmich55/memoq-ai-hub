@@ -57,6 +57,18 @@ test('Chinese locale is independent and matches English locale keys', () => {
   assert.equal(zhCN.nav.logs, '日志');
   assert.equal(zhCN.providers.title, 'AI 服务');
   assert.equal(en.nav.providers, 'AI Services');
+  assert.equal(en.history.insights.title, 'History insights');
+  assert.equal(zhCN.history.insights.title, '历史洞察');
+  assert.equal(en.history.issue.timeout, 'Timeouts');
+  assert.equal(zhCN.history.issue.timeout, '超时');
+  assert.equal(en.history.issueTag.cache_hit, 'Cache hit');
+  assert.equal(zhCN.history.issueTag.cache_hit, '缓存命中');
+  assert.equal(en.history.diagnosticSummary, 'Diagnostic summary');
+  assert.equal(zhCN.history.diagnosticSummary, '诊断摘要');
+  assert.equal(en.providers.insightFocusTitle, 'Opened from History Insights');
+  assert.equal(zhCN.providers.insightFocusTitle, '从历史洞察打开');
+  assert.equal(en.common.dismiss, 'Dismiss');
+  assert.equal(zhCN.common.dismiss, '关闭提示');
 });
 
 test('dashboard keeps refresh controls icon-first and guards stale available updates', () => {
@@ -74,6 +86,53 @@ test('dashboard keeps refresh controls icon-first and guards stale available upd
   assert.equal(zhCN.dashboard.updateCheckingLatestVersion, '检查中...');
   assert.match(en.dashboard.updateCheckTimeoutError, /timed out/i);
   assert.match(zhCN.dashboard.updateCheckTimeoutError, /超时/);
+});
+
+test('history insights expose issue filtering and actionable navigation hooks', () => {
+  const appSource = readRendererSource('App.jsx');
+
+  assert.match(appSource, /issue:\s*''/);
+  assert.match(appSource, /function applyHistoryInsightFilter/);
+  assert.match(appSource, /function openInsightProvider/);
+  assert.match(appSource, /historyInsightFocus/);
+  assert.match(appSource, /providerInsightFocus/);
+  assert.match(appSource, /function returnFromProviderInsightFocus/);
+  assert.match(appSource, /openInsightProvider\(record\.providerId,\s*\{/);
+  assert.match(appSource, /getHistoryIssueLabel/);
+  assert.match(appSource, /history\.issueFilter/);
+  assert.match(appSource, /history\.insights\.viewRecordsAction/);
+  assert.match(appSource, /history\.insights\.configureAction/);
+});
+
+test('history records expose per-entry diagnostics and attempt timeline affordances', () => {
+  const appSource = readRendererSource('App.jsx');
+  const cssSource = readRendererSource('index.css');
+
+  assert.match(appSource, /function buildHistoryIssueTags/);
+  assert.match(appSource, /function buildHistoryDiagnosticSummary/);
+  assert.match(appSource, /function buildHistoryAttemptRows/);
+  assert.match(appSource, /title:\s*t\('history\.issues'\)/);
+  assert.match(appSource, /history\.diagnosticSummary/);
+  assert.match(appSource, /history\.attemptTimeline/);
+  assert.match(appSource, /history\.noAttempts/);
+  assert.match(cssSource, /\.history-issue-tag-row/);
+  assert.match(cssSource, /\.history-diagnostic-card/);
+  assert.match(cssSource, /\.history-attempt-status-tag/);
+});
+
+test('provider page exposes history insight focus affordances', () => {
+  const providerSource = readRendererSource('pages/providers/ProvidersPage.jsx');
+  const cssSource = readRendererSource('index.css');
+
+  assert.match(providerSource, /insightFocus/);
+  assert.match(providerSource, /onBackToHistory/);
+  assert.match(providerSource, /onClearInsightFocus/);
+  assert.match(providerSource, /focusedModelName/);
+  assert.match(providerSource, /provider-model-row-focused/);
+  assert.match(providerSource, /providers\.insightFocusTitle/);
+  assert.match(providerSource, /providers\.backToHistory/);
+  assert.match(cssSource, /\.provider-insight-focus-alert/);
+  assert.match(cssSource, /\.provider-model-row-focused > td/);
 });
 
 test('global select styles allow selected values and dropdown options to wrap', () => {

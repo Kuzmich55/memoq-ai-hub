@@ -238,6 +238,7 @@ function ProviderHeader({
 
 function ProviderModelTable({
   currentProvider,
+  focusedModelName,
   providerModelSelection,
   onConfirmBulkDeleteModels,
   onOpenProviderModelManager,
@@ -248,6 +249,7 @@ function ProviderModelTable({
 }) {
   const { t } = useI18n();
   const rows = buildProviderModelTableRows(currentProvider);
+  const normalizedFocusedModelName = String(focusedModelName || '').trim().toLowerCase();
 
   return (
     <>
@@ -272,6 +274,11 @@ function ProviderModelTable({
         rowKey="id"
         pagination={false}
         dataSource={rows}
+        rowClassName={(record) => (
+          normalizedFocusedModelName && String(record.modelName || '').trim().toLowerCase() === normalizedFocusedModelName
+            ? 'provider-model-row-focused'
+            : ''
+        )}
         rowSelection={{
           selectedRowKeys: providerModelSelection,
           onChange: (selectedRowKeys) => onProviderModelSelectionChange?.(selectedRowKeys)
@@ -284,6 +291,7 @@ function ProviderModelTable({
               <Space wrap size={[8, 8]}>
                 <Input value={record.modelName} onChange={(event) => onPatchModel?.(record.id, 'modelName', event.target.value)} />
                 {record.id === currentProvider.defaultModelId && <Tag color="green">{t('providers.defaultModel')}</Tag>}
+                {normalizedFocusedModelName && String(record.modelName || '').trim().toLowerCase() === normalizedFocusedModelName && <Tag color="blue">{t('providers.focusedModel')}</Tag>}
               </Space>
             )
           },
@@ -456,6 +464,8 @@ export function ProvidersPage(props) {
     getProviderTypeLabel,
     getStatusTagMeta,
     groupedProviders,
+    focusedModelName,
+    insightFocus,
     isDraftProvider,
     onAddModelToCurrentProvider,
     onCloseProviderModelManager,
@@ -476,6 +486,8 @@ export function ProvidersPage(props) {
     onSelectProvider,
     onSetCurrentProviderDefaultModel,
     onTestProvider,
+    onBackToHistory,
+    onClearInsightFocus,
     providerItems,
     providerModelManagerOpen,
     providerModelSearch,
@@ -495,6 +507,8 @@ export function ProvidersPage(props) {
     t
   });
   const isTestConnectionDisabled = isProviderConnectionTestDisabled(currentProvider, testingProvider);
+  const insightFocusProviderName = String(insightFocus?.provider || currentProvider?.name || '').trim();
+  const insightFocusModelName = String(insightFocus?.model || focusedModelName || '').trim();
 
   return (
     <Row gutter={[20, 20]}>
@@ -521,6 +535,23 @@ export function ProvidersPage(props) {
       <Col xs={24} xl={getPanelContentSpan(sidebarCollapsed)}>
         {currentProvider ? (
           <Space direction="vertical" size={18} style={{ display: 'flex' }}>
+            {insightFocus ? (
+              <Alert
+                type="info"
+                showIcon
+                className="provider-insight-focus-alert"
+                message={t('providers.insightFocusTitle')}
+                description={insightFocusModelName
+                  ? t('providers.insightFocusDescription', { provider: insightFocusProviderName || '-', model: insightFocusModelName })
+                  : t('providers.insightFocusProviderDescription', { provider: insightFocusProviderName || '-' })}
+                action={(
+                  <Space wrap size={[8, 8]}>
+                    <Button size="small" onClick={onBackToHistory}>{t('providers.backToHistory')}</Button>
+                    <Button size="small" onClick={onClearInsightFocus}>{t('common.dismiss')}</Button>
+                  </Space>
+                )}
+              />
+            ) : null}
             <ProviderHeader
               currentProvider={currentProvider}
               currentProviderConnectionMeta={currentProviderConnectionMeta}
@@ -620,6 +651,7 @@ export function ProvidersPage(props) {
 
                 <ProviderModelTable
                   currentProvider={currentProvider}
+                  focusedModelName={focusedModelName}
                   providerModelSelection={providerModelSelection}
                   onConfirmBulkDeleteModels={onConfirmBulkDeleteModels}
                   onOpenProviderModelManager={onOpenProviderModelManager}
