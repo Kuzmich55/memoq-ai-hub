@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('memoqDesktop', {
   getGatewayBaseUrl: () => ipcRenderer.invoke('desktop:get-gateway-base-url'),
   getAppState: (filters) => ipcRenderer.invoke('desktop:get-app-state', filters),
+  getHistoryEntry: (entryId) => ipcRenderer.invoke('desktop:get-history-entry', entryId),
   getLogState: () => ipcRenderer.invoke('desktop:get-log-state'),
   pruneLogs: () => ipcRenderer.invoke('desktop:prune-logs'),
   recordRendererLog: (payload) => ipcRenderer.invoke('desktop:record-renderer-log', payload || {}),

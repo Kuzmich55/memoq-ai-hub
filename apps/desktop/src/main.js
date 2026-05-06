@@ -436,6 +436,10 @@ function registerIpcHandlers() {
 
     return invokeWorker('getAppState', filters || {});
   });
+  ipcMain.handle('desktop:get-history-entry', (_event, entryId) => {
+    requireWorkerReady();
+    return invokeWorker('getHistoryEntry', { entryId });
+  });
   ipcMain.handle('desktop:save-profile', (_event, profile) => {
     requireWorkerReady();
     return invokeWorker('saveProfile', profile || {});

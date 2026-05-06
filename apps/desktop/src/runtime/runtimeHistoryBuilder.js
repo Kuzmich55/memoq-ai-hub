@@ -12,7 +12,7 @@ function buildHistorySummary(entry = {}) {
     .join(' | ');
 
   return {
-    segmentCount: segments.length,
+    segmentCount: segments.length || (Number.isFinite(Number(entry.segmentCount)) ? Number(entry.segmentCount) : 0),
     segmentSummary: preview
   };
 }

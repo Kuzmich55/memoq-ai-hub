@@ -68,7 +68,9 @@ const {
   parseTimeMs,
   parseLocalFilterDate,
   formatLocalTimestamp,
-  filterHistoryEntries
+  filterHistoryEntries,
+  hasHistoryFallback,
+  SLOW_HISTORY_LATENCY_MS
 } = require('./runtimeHistory');
 const {
   createSingleRequestMetadata,
@@ -79,6 +81,7 @@ const {
 const {
   buildHistoryInsights,
   buildHistoryMetrics,
+  buildHistoryMetricsByProvider,
   buildHistorySummary,
   buildIntegrationConfig
 } = require('./runtimeHistoryIntegrationSupport');
@@ -346,6 +349,52 @@ async function createRuntime(options = {}) {
     return persistence.listHistory();
   }
 
+  function loadHistoryEntry(entryId) {
+    return persistence.getHistoryEntry(entryId);
+  }
+
+  function buildHistoryIssueFlags(entry = {}) {
+    const attempts = Array.isArray(entry.attempts) ? entry.attempts : [];
+    const latencyMs = Number(entry.latencyMs);
+    return {
+      failed: String(entry.status || '').trim().toLowerCase() === 'failed',
+      timeout: attempts.some((attempt) => {
+        const errorCode = String(attempt?.errorCode || '').trim().toUpperCase();
+        return errorCode === 'PROVIDER_TIMEOUT' || errorCode === 'TRANSLATION_TIMEOUT';
+      }),
+      rate_limit: attempts.some((attempt) => String(attempt?.errorCode || '').trim().toUpperCase() === 'PROVIDER_RATE_LIMITED'),
+      fallback: hasHistoryFallback(entry),
+      slow: Number.isFinite(latencyMs) && latencyMs > SLOW_HISTORY_LATENCY_MS,
+      cache_hit: attempts.some((attempt) => {
+        const cacheKind = String(attempt?.cacheKind || '').trim().toLowerCase();
+        return cacheKind === 'exact' || cacheKind === 'adaptive';
+      })
+    };
+  }
+
+  function buildHistoryListItem(entry = {}) {
+    const summary = buildHistorySummary(entry);
+    const item = {
+      id: String(entry.id || '').trim(),
+      requestId: String(entry.requestId || '').trim(),
+      projectId: String(entry.projectId || '').trim(),
+      subject: String(entry.subject || '').trim(),
+      providerId: String(entry.providerId || '').trim(),
+      providerName: String(entry.providerName || '').trim(),
+      model: String(entry.model || '').trim(),
+      status: String(entry.status || '').trim(),
+      submittedAt: String(entry.submittedAt || '').trim(),
+      completedAt: String(entry.completedAt || '').trim(),
+      latencyMs: Number.isFinite(Number(entry.latencyMs)) ? Number(entry.latencyMs) : null,
+      ...summary,
+      issueFlags: buildHistoryIssueFlags(entry)
+    };
+    // IPC serializes only the lightweight own fields above; internal runtime
+    // callers can still read the original diagnostic payload when needed.
+    Object.setPrototypeOf(item, entry);
+    return item;
+  }
+
   function normalizeManualMapping(value = {}) {
     return {
       srcColumn: String(value?.srcColumn || '').trim(),
@@ -508,8 +557,12 @@ async function createRuntime(options = {}) {
   }
 
   function enrichProviders(state, historyEntries = []) {
+    const metricsByProvider = buildHistoryMetricsByProvider(historyEntries);
     return state.providers.map((provider) => {
-      const metrics = buildHistoryMetrics(historyEntries, provider.id);
+      const metrics = metricsByProvider.get(provider.id) || {
+        successRate24h: null,
+        avgLatencyMs: null
+      };
       return { ...provider, hasSecret: secretStore.has(provider.secretRef), successRate24h: metrics.successRate24h, avgLatencyMs: metrics.avgLatencyMs };
     });
   }
@@ -2363,10 +2416,12 @@ async function createRuntime(options = {}) {
 
   function getState(filters = {}) {
     const state = loadState();
-    const historyEntries = loadHistoryEntries();
+    const includeHistoryExplorer = filters.includeHistoryExplorer !== false;
+    const includeProviderHistoryMetrics = filters.includeProviderHistoryMetrics !== false;
+    const historyEntries = (includeHistoryExplorer || includeProviderHistoryMetrics) ? loadHistoryEntries() : [];
     const integration = getIntegrationStatus(paths, buildIntegrationConfig(state));
-    const history = filterHistoryEntries(historyEntries, filters);
-    const providers = enrichProviders(state, historyEntries);
+    const history = includeHistoryExplorer ? filterHistoryEntries(historyEntries, filters) : [];
+    const providers = enrichProviders(state, includeProviderHistoryMetrics ? historyEntries : []);
     const previewStatus = syncPreviewBridgeStatusFromClient();
     const updateStatus = updateService.getStatus();
     return {
@@ -2408,11 +2463,8 @@ async function createRuntime(options = {}) {
         }
       },
       historyExplorer: {
-        insights: buildHistoryInsights(history),
-        items: history.map((entry) => ({
-          ...entry,
-          ...buildHistorySummary(entry)
-        }))
+        insights: includeHistoryExplorer ? buildHistoryInsights(history) : buildHistoryInsights([]),
+        items: includeHistoryExplorer ? history.map((entry) => buildHistoryListItem(entry)) : []
       }
     };
   }
@@ -3776,6 +3828,10 @@ async function createRuntime(options = {}) {
     },
     getAppState(filters = {}) {
       return getState(filters);
+    },
+    getHistoryEntry(entryId) {
+      const entry = loadHistoryEntry(entryId);
+      return entry ? { ...entry, ...buildHistorySummary(entry), issueFlags: buildHistoryIssueFlags(entry) } : null;
     },
     getUpdateStatus() {
       return updateService.getStatus();

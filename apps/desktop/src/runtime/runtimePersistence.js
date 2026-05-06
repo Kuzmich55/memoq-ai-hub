@@ -208,6 +208,21 @@ function listHistoryEntries(db) {
     .filter(Boolean);
 }
 
+function getHistoryEntry(db, entryId) {
+  const normalizedId = String(entryId || '').trim();
+  if (!normalizedId) {
+    return null;
+  }
+  const row = db.get(`
+    SELECT entry_json
+    FROM translation_history
+    WHERE id = $id
+  `, {
+    $id: normalizedId
+  });
+  return parseJson(row?.entry_json, null);
+}
+
 function readCacheEntry(db, tableName, key) {
   const normalizedKey = String(key || '').trim();
   if (!normalizedKey) {
@@ -407,6 +422,9 @@ function createRuntimePersistence(db, { nowIso, normalizeState }) {
     migrateLegacyState,
     listHistory() {
       return listHistoryEntries(db);
+    },
+    getHistoryEntry(entryId) {
+      return getHistoryEntry(db, entryId);
     },
     deleteHistoryEntries(entryIds = []) {
       const normalizedIds = Array.from(new Set(

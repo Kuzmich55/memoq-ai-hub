@@ -170,6 +170,10 @@ function createMockDatabaseModule(options = {}) {
       if (text.includes('SELECT id FROM app_state')) {
         return store.appStateRow && store.appStateRow.id === params.$id ? { id: store.appStateRow.id } : null;
       }
+      if (text.includes('SELECT entry_json') && text.includes('FROM translation_history') && text.includes('WHERE id = $id')) {
+        const row = store.historyRows.get(params.$id);
+        return row ? { entry_json: row.entry_json } : null;
+      }
       if (text.includes('SELECT COUNT(*) AS row_count FROM translation_history')) {
         return { row_count: store.historyRows.size };
       }
@@ -604,6 +608,59 @@ test('runtime migrates legacy blob history and caches into repo-backed tables on
     assert.equal('translationCache' in persistedState, false);
     assert.equal('promptResponseCache' in persistedState, false);
     assert.equal('documentSummaryCache' in persistedState, false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('runtime returns lightweight history rows and loads full history details on demand', async () => {
+  const tempRoot = createTempAppRoot();
+  const databaseCapture = {};
+  const historyEntry = {
+    id: 'hist-lightweight',
+    requestId: 'REQ-LIGHT',
+    providerId: 'provider-1',
+    providerName: 'OpenAI',
+    model: 'gpt-5.4',
+    status: 'success',
+    submittedAt: '2026-03-26T00:00:00.000Z',
+    completedAt: '2026-03-26T00:00:01.000Z',
+    latencyMs: 1250,
+    attempts: [{ providerId: 'provider-1', latencyMs: 1250, cacheKind: 'exact', success: true }],
+    segments: [{ id: 'seg-1', index: 0, sourceText: 'Source text', targetText: 'Target text' }]
+  };
+
+  try {
+    const runtime = await createRuntime({
+      appDataRoot: tempRoot,
+      __databaseState: {
+        historyRows: [
+          {
+            id: historyEntry.id,
+            request_id: historyEntry.requestId,
+            submitted_at: historyEntry.submittedAt,
+            completed_at: historyEntry.completedAt,
+            entry_json: historyEntry
+          }
+        ],
+        historySegmentRows: [
+          { id: 'seg-1', history_id: historyEntry.id, segment_index: 0, source_text: 'Source text', target_text: 'Target text', segment_json: historyEntry.segments[0] }
+        ]
+      },
+      __databaseCapture: databaseCapture
+    });
+
+    const state = runtime.getAppState();
+    const historyItem = state.historyExplorer.items[0];
+    assert.equal(historyItem.id, historyEntry.id);
+    assert.equal(historyItem.segmentSummary, 'Target text');
+    assert.equal(Object.prototype.hasOwnProperty.call(historyItem, 'segments'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(historyItem, 'attempts'), false);
+    assert.equal(JSON.stringify(historyItem).includes('Source text'), false);
+
+    const fullEntry = runtime.getHistoryEntry(historyEntry.id);
+    assert.equal(fullEntry.attempts[0].cacheKind, 'exact');
+    assert.equal(fullEntry.segments[0].sourceText, 'Source text');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

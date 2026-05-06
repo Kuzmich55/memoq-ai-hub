@@ -622,7 +622,8 @@ const zhCN = {
       totalSegments: '{{count}} 个片段',
       avgLatency: '平均延迟',
       failedRequests: '{{count}} 个失败',
-      p95Latency: 'P95 延迟',
+      failedRequestsTitle: '失败请求',
+      slowRequests: '慢请求',
       fallbackCount: '{{count}} 次 fallback',
       cacheHitRate: '缓存命中率',
       cacheHitBreakdown: '{{exact}} 精确 / {{adaptive}} 自适应',
@@ -642,7 +643,7 @@ const zhCN = {
       attention: {
         successRateCritical: '成功率较低，仅 {{value}}%。请检查 AI 服务健康状态和最近失败记录。',
         successRateWarning: '成功率低于目标，为 {{value}}%。扩大使用前建议观察最近失败。',
-        p95LatencyHigh: 'P95 延迟较高，为 {{value}} ms。可考虑缩小批量或切换更快的模型路由。',
+        slowRequestsPresent: '有 {{count}} 条请求耗时较长。',
         timeoutsPresent: '检测到 {{count}} 次超时。请检查服务超时、并发和批量设置。',
         rateLimitsPresent: '检测到 {{count}} 次限流。请降低并发或增加重试间隔。',
         batchFallbacksPresent: '发生 {{count}} 次批量 fallback。应用已恢复，但吞吐可能不稳定。',
@@ -650,6 +651,8 @@ const zhCN = {
       }
     },
     clearInsightFilters: '清除筛选',
+    detailLoadFailed: '无法加载这条历史记录。',
+    detailNotFound: '这条历史记录已不可用。',
     diagnosticSummary: '诊断摘要',
     diagnosticIssueCount: '问题数',
     diagnosticTotalLatency: '总延迟',

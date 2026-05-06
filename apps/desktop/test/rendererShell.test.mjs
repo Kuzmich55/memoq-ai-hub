@@ -88,20 +88,19 @@ test('dashboard keeps refresh controls icon-first and guards stale available upd
   assert.match(zhCN.dashboard.updateCheckTimeoutError, /超时/);
 });
 
-test('history insights expose issue filtering and actionable navigation hooks', () => {
+test('history insights expose simple latency-focused filtering hooks', () => {
   const appSource = readRendererSource('App.jsx');
 
   assert.match(appSource, /issue:\s*''/);
   assert.match(appSource, /function applyHistoryInsightFilter/);
-  assert.match(appSource, /function openInsightProvider/);
   assert.match(appSource, /historyInsightFocus/);
-  assert.match(appSource, /providerInsightFocus/);
-  assert.match(appSource, /function returnFromProviderInsightFocus/);
-  assert.match(appSource, /openInsightProvider\(record\.providerId,\s*\{/);
+  assert.match(appSource, /history\.insights\.avgLatency/);
+  assert.match(appSource, /history\.insights\.slowRequests/);
+  assert.match(appSource, /history\.insights\.failedRequestsTitle/);
+  assert.doesNotMatch(appSource, /history\.insights\.p95Latency/);
+  assert.doesNotMatch(appSource, /history\.insights\.cacheHitRate/);
   assert.match(appSource, /getHistoryIssueLabel/);
   assert.match(appSource, /history\.issueFilter/);
-  assert.match(appSource, /history\.insights\.viewRecordsAction/);
-  assert.match(appSource, /history\.insights\.configureAction/);
 });
 
 test('history records expose per-entry diagnostics and attempt timeline affordances', () => {

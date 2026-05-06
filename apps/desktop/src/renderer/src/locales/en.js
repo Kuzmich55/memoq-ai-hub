@@ -622,7 +622,8 @@ const en = {
       totalSegments: '{{count}} segment(s)',
       avgLatency: 'Average latency',
       failedRequests: '{{count}} failed',
-      p95Latency: 'P95 latency',
+      failedRequestsTitle: 'Failed requests',
+      slowRequests: 'Slow requests',
       fallbackCount: '{{count}} fallback(s)',
       cacheHitRate: 'Cache hit rate',
       cacheHitBreakdown: '{{exact}} exact / {{adaptive}} adaptive',
@@ -642,7 +643,7 @@ const en = {
       attention: {
         successRateCritical: 'Success rate is low at {{value}}%. Review provider health and recent failures.',
         successRateWarning: 'Success rate is below target at {{value}}%. Watch recent failures before scaling this setup.',
-        p95LatencyHigh: 'P95 latency is high at {{value}} ms. Consider smaller batches or a faster model route.',
+        slowRequestsPresent: '{{count}} request(s) took longer than expected.',
         timeoutsPresent: '{{count}} timeout(s) detected. Check provider timeout, concurrency, and batch size settings.',
         rateLimitsPresent: '{{count}} rate limit event(s) detected. Reduce concurrency or add retry spacing.',
         batchFallbacksPresent: '{{count}} batch fallback(s) occurred. The app recovered, but throughput may be unstable.',
@@ -650,6 +651,8 @@ const en = {
       }
     },
     clearInsightFilters: 'Clear filters',
+    detailLoadFailed: 'Could not load this history entry.',
+    detailNotFound: 'This history entry is no longer available.',
     diagnosticSummary: 'Diagnostic summary',
     diagnosticIssueCount: 'Issue count',
     diagnosticTotalLatency: 'Total latency',

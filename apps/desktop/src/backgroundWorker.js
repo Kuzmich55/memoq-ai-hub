@@ -133,6 +133,9 @@ const requestHandlers = {
   getAppState(payload) {
     return requireRuntime().getAppState(payload || {});
   },
+  getHistoryEntry(payload) {
+    return requireRuntime().getHistoryEntry(payload?.entryId || payload);
+  },
   saveProfile(payload) {
     return requireRuntime().saveProfile(payload || {});
   },

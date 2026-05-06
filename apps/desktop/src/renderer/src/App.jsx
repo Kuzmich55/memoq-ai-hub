@@ -31,6 +31,7 @@ import {
   Row,
   Select,
   Space,
+  Spin,
   Statistic,
   Switch,
   Table,
@@ -92,7 +93,7 @@ const DEFAULT_HISTORY_INSIGHTS = {
   totalSegments: 0,
   successRate: null,
   avgLatencyMs: null,
-  p95LatencyMs: null,
+  slowRequestCount: 0,
   failedCount: 0,
   timeoutCount: 0,
   rateLimitCount: 0,
@@ -751,6 +752,9 @@ function getHistoryAttemptErrorCode(attempt = {}) {
 }
 
 function hasHistoryFallback(entry = {}) {
+  if (entry?.issueFlags?.fallback === true) {
+    return true;
+  }
   if (entry.finalizedByFallbackRoute === true) {
     return true;
   }
@@ -767,10 +771,12 @@ function matchesHistoryIssue(entry = {}, issue = '') {
   }
 
   if (normalizedIssue === 'failed') {
+    if (entry?.issueFlags?.failed === true) return true;
     return String(entry?.status || '').trim().toLowerCase() === 'failed';
   }
 
   if (normalizedIssue === 'timeout') {
+    if (entry?.issueFlags?.timeout === true) return true;
     return getHistoryAttempts(entry).some((attempt) => {
       const errorCode = getHistoryAttemptErrorCode(attempt);
       return errorCode === 'PROVIDER_TIMEOUT' || errorCode === 'TRANSLATION_TIMEOUT';
@@ -778,6 +784,7 @@ function matchesHistoryIssue(entry = {}, issue = '') {
   }
 
   if (normalizedIssue === 'rate_limit') {
+    if (entry?.issueFlags?.rate_limit === true) return true;
     return getHistoryAttempts(entry).some((attempt) => getHistoryAttemptErrorCode(attempt) === 'PROVIDER_RATE_LIMITED');
   }
 
@@ -786,6 +793,7 @@ function matchesHistoryIssue(entry = {}, issue = '') {
   }
 
   if (normalizedIssue === 'slow') {
+    if (entry?.issueFlags?.slow === true) return true;
     const latencyMs = Number(entry?.latencyMs);
     return Number.isFinite(latencyMs) && latencyMs > SLOW_HISTORY_LATENCY_MS;
   }
@@ -853,6 +861,9 @@ function getHistoryInsightFocusMessage(t, focus = {}) {
 }
 
 function hasHistoryCacheHit(entry = {}) {
+  if (entry?.issueFlags?.cache_hit === true) {
+    return true;
+  }
   return getHistoryAttempts(entry).some((attempt) => {
     const cacheKind = String(attempt?.cacheKind || '').trim().toLowerCase();
     return cacheKind === 'exact' || cacheKind === 'adaptive';
@@ -948,15 +959,16 @@ function filterHistoryItems(items = [], filters = {}) {
   const dateTo = parseFilterDate(filters.dateTo, true);
 
   return items.filter((item) => {
-    const searchableText = JSON.stringify({
-      requestId: item.requestId || '',
-      projectId: item.projectId || '',
-      subject: item.subject || '',
-      providerName: item.providerName || '',
-      model: item.model || '',
-      status: item.status || '',
-      segments: item.segments || []
-    }).toLowerCase();
+    const searchableText = [
+      item.requestId,
+      item.projectId,
+      item.subject,
+      item.providerId,
+      item.providerName,
+      item.model,
+      item.status,
+      item.segmentSummary
+    ].map((value) => String(value || '').toLowerCase()).join(' ');
 
     if (search && !searchableText.includes(search)) {
       return false;
@@ -1517,6 +1529,9 @@ export default function App() {
   const [providerId, setProviderId] = useState('');
   const [selectedHistoryIds, setSelectedHistoryIds] = useState([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState('');
+  const [historyDetailRecord, setHistoryDetailRecord] = useState(null);
+  const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
+  const [historyDetailError, setHistoryDetailError] = useState('');
   const [error, setError] = useState('');
   const [installing, setInstalling] = useState(false);
   const [handshaking, setHandshaking] = useState(false);
@@ -1583,7 +1598,12 @@ export default function App() {
         throw new Error('Desktop bridge is not available yet.');
       }
 
-      const remoteData = normalizeAppStatePayload(await api.getAppState(filters));
+      const requestFilters = {
+        ...(filters || {}),
+        includeHistoryExplorer: activePage === 'history',
+        includeProviderHistoryMetrics: activePage === 'providers'
+      };
+      const remoteData = normalizeAppStatePayload(await api.getAppState(requestFilters));
       const providerRebase = rebaseDraftEntries(providerDraftsRef.current, remoteData?.providerHub?.providers || [], buildProviderFingerprint);
       const profileRebase = rebaseDraftEntries(profileDraftsRef.current, remoteData?.contextBuilder?.profiles || [], buildProfileFingerprint);
 
@@ -1729,6 +1749,55 @@ export default function App() {
   }, [activePage]);
 
   useEffect(() => {
+    if (activePage === 'history') {
+      void refresh(historyFilters);
+    }
+  }, [activePage]);
+
+  useEffect(() => {
+    if (!selectedHistoryId) {
+      setHistoryDetailRecord(null);
+      setHistoryDetailLoading(false);
+      setHistoryDetailError('');
+      return undefined;
+    }
+
+    let cancelled = false;
+    setHistoryDetailLoading(true);
+    setHistoryDetailError('');
+    setHistoryDetailRecord(null);
+
+    if (typeof api?.getHistoryEntry !== 'function') {
+      setHistoryDetailLoading(false);
+      setHistoryDetailError(t('history.detailLoadFailed'));
+      return undefined;
+    }
+
+    void api.getHistoryEntry(selectedHistoryId)
+      .then((entry) => {
+        if (cancelled) return;
+        if (!entry) {
+          setHistoryDetailError(t('history.detailNotFound'));
+          return;
+        }
+        setHistoryDetailRecord(entry);
+      })
+      .catch((loadError) => {
+        if (cancelled) return;
+        setHistoryDetailError(String(loadError?.message || t('history.detailLoadFailed')));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setHistoryDetailLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, selectedHistoryId, t]);
+
+  useEffect(() => {
     if (state?.startup?.status !== 'ready' || autoUpdateCheckStartedRef.current || typeof api?.checkForUpdates !== 'function') {
       return;
     }
@@ -1836,10 +1905,11 @@ export default function App() {
     () => String(currentProviderConnectionSnapshot.message || '').trim(),
     [currentProviderConnectionSnapshot]
   );
-  const currentHistoryRecord = useMemo(
+  const currentHistoryListItem = useMemo(
     () => state?.historyExplorer?.items?.find((item) => item.id === selectedHistoryId) || null,
     [state, selectedHistoryId],
   );
+  const currentHistoryRecord = historyDetailRecord || currentHistoryListItem;
   const installOptions = useMemo(() => buildInstallOptions(state?.integration || {}), [state]);
   const installPreviewPath = installDraft.mode === 'custom'
     ? installDraft.customInstallDir
@@ -3294,139 +3364,23 @@ export default function App() {
                     {(historyInsights.totalRequests || 0) > 0 ? (
                       <Space direction="vertical" size={14} style={{ display: 'flex' }}>
                         <Row gutter={[12, 12]}>
-                          <Col xs={24} sm={12} lg={6}>
-                            <div className="history-insight-stat">
-                              <Statistic title={t('history.insights.successRate')} value={formatInsightPercent(historyInsights.successRate)} />
-                              <Text type="secondary">{t('history.insights.totalSegments', { count: historyInsights.totalSegments || 0 })}</Text>
-                            </div>
-                          </Col>
-                          <Col xs={24} sm={12} lg={6}>
+                          <Col xs={24} md={8}>
                             <div className="history-insight-stat">
                               <Statistic title={t('history.insights.avgLatency')} value={formatInsightLatency(historyInsights.avgLatencyMs)} />
-                              <Text type="secondary">{t('history.insights.failedRequests', { count: historyInsights.failedCount || 0 })}</Text>
+                              <Text type="secondary">{t('history.insights.scope', { count: historyInsights.totalRequests || 0 })}</Text>
                             </div>
                           </Col>
-                          <Col xs={24} sm={12} lg={6}>
+                          <Col xs={24} md={8}>
                             <div className="history-insight-stat">
-                              <Statistic title={t('history.insights.p95Latency')} value={formatInsightLatency(historyInsights.p95LatencyMs)} />
-                              <Text type="secondary">{t('history.insights.fallbackCount', { count: historyInsights.batchFallbackCount || 0 })}</Text>
+                              <Statistic title={t('history.insights.slowRequests')} value={historyInsights.slowRequestCount || 0} />
+                              <Text type="secondary">{t('history.issueTag.slow')}</Text>
                             </div>
                           </Col>
-                          <Col xs={24} sm={12} lg={6}>
+                          <Col xs={24} md={8}>
                             <div className="history-insight-stat">
-                              <Statistic title={t('history.insights.cacheHitRate')} value={formatInsightPercent(historyInsights.cacheHitRate)} />
-                              <Text type="secondary">
-                                {t('history.insights.cacheHitBreakdown', {
-                                  exact: historyInsights.exactCacheHitCount || 0,
-                                  adaptive: historyInsights.adaptiveCacheHitCount || 0
-                                })}
-                              </Text>
+                              <Statistic title={t('history.insights.failedRequestsTitle')} value={historyInsights.failedCount || 0} />
+                              <Text type="secondary">{t('history.statusFailed')}</Text>
                             </div>
-                          </Col>
-                        </Row>
-                        <Row gutter={[12, 12]} align="top">
-                          <Col xs={24} xl={15}>
-                            <Table
-                              size="small"
-                              pagination={false}
-                              rowKey="key"
-                              dataSource={(historyInsights.providerBreakdown || []).slice(0, 5)}
-                              locale={{ emptyText: t('history.insights.noProviderBreakdown') }}
-                              columns={[
-                                {
-                                  title: t('common.provider'),
-                                  dataIndex: 'providerName',
-                                  render: (value, record) => (
-                                    <Space direction="vertical" size={0}>
-                                      <Text strong>{value || '-'}</Text>
-                                      <Text type="secondary">{record.model || '-'}</Text>
-                                    </Space>
-                                  )
-                                },
-                                { title: t('history.insights.requests'), dataIndex: 'requestCount', width: 96 },
-                                {
-                                  title: t('history.insights.providerSuccessRate'),
-                                  dataIndex: 'successRate',
-                                  width: 120,
-                                  render: (value) => formatInsightPercent(value)
-                                },
-                                {
-                                  title: t('history.insights.providerAvgLatency'),
-                                  dataIndex: 'avgLatencyMs',
-                                  width: 120,
-                                  render: (value) => formatInsightLatency(value)
-                                },
-                                { title: t('history.insights.providerFallbacks'), dataIndex: 'fallbackCount', width: 100 },
-                                {
-                                  title: t('common.actions'),
-                                  width: 150,
-                                  render: (_, record) => (
-                                    <Space size={4}>
-                                      <Button
-                                        type="link"
-                                        size="small"
-                                        onClick={() => void applyHistoryInsightFilter(
-                                          { provider: record.providerName || record.providerId || '', model: record.model || '' },
-                                          { provider: record.providerName || record.providerId || '', model: record.model || '', source: 'providerBreakdown' }
-                                        )}
-                                      >
-                                        {t('history.insights.filterAction')}
-                                      </Button>
-                                      <Button
-                                        type="link"
-                                        size="small"
-                                        onClick={() => openInsightProvider(record.providerId, {
-                                          provider: record.providerName || record.providerId || '',
-                                          model: record.model || '',
-                                          source: 'providerBreakdown'
-                                        })}
-                                        disabled={!record.providerId}
-                                      >
-                                        {t('history.insights.configureAction')}
-                                      </Button>
-                                    </Space>
-                                  )
-                                }
-                              ]}
-                            />
-                          </Col>
-                          <Col xs={24} xl={9}>
-                            {(historyInsights.attentionItems || []).length ? (
-                              <Space direction="vertical" size={8} style={{ display: 'flex' }}>
-                                {(historyInsights.attentionItems || []).map((item) => (
-                                  <Alert
-                                    key={item.key}
-                                    type={getAttentionAlertType(item.severity)}
-                                    showIcon
-                                    message={t(`history.insights.attention.${item.code}`, item.values || {})}
-                                    action={item.filter ? (
-                                      <Button size="small" onClick={() => void applyHistoryInsightFilter(item.filter, {
-                                        code: item.code,
-                                        values: item.values || {},
-                                        severity: item.severity || '',
-                                        source: 'attention'
-                                      })}
-                                      >
-                                        {t('history.insights.viewRecordsAction')}
-                                      </Button>
-                                    ) : item.providerId ? (
-                                      <Button size="small" onClick={() => openInsightProvider(item.providerId, {
-                                        code: item.code,
-                                        values: item.values || {},
-                                        severity: item.severity || '',
-                                        model: item.model || '',
-                                        source: 'attention'
-                                      })}
-                                      >
-                                        {t('history.insights.configureAction')}
-                                      </Button>
-                                    ) : null}
-                                  />
-                                ))}
-                              </Space>
-                            ) : (
-                              <Alert type="success" showIcon message={t('history.insights.noAttention')} />
-                            )}
                           </Col>
                         </Row>
                       </Space>
@@ -3636,13 +3590,23 @@ export default function App() {
 
       <Drawer
         title={t('history.details')}
-        extra={currentHistoryRecord ? <Button danger onClick={confirmDeleteCurrentHistoryEntry}>{t('common.delete')}</Button> : null}
-        open={Boolean(currentHistoryRecord)}
-        onClose={() => setSelectedHistoryId('')}
+        extra={currentHistoryListItem ? <Button danger onClick={confirmDeleteCurrentHistoryEntry}>{t('common.delete')}</Button> : null}
+        open={Boolean(selectedHistoryId)}
+        onClose={() => {
+          setSelectedHistoryId('');
+          setHistoryDetailRecord(null);
+          setHistoryDetailError('');
+        }}
         width={WIDE_SIDE_DRAWER_WIDTH}
         destroyOnClose
       >
-        {currentHistoryRecord ? (
+        {historyDetailLoading ? (
+          <div style={{ padding: 32, textAlign: 'center' }}>
+            <Spin />
+          </div>
+        ) : historyDetailError ? (
+          <Alert type="error" showIcon message={historyDetailError} />
+        ) : currentHistoryRecord ? (
           <Space direction="vertical" size={16} style={{ display: 'flex' }}>
             <Card size="small" title={t('history.diagnosticSummary')} className="history-diagnostic-card">
               {(() => {

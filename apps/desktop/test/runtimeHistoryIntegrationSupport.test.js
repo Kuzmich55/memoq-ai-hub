@@ -16,7 +16,7 @@ test('runtime history integration support returns empty insights for empty histo
     failedCount: 0,
     successRate: null,
     avgLatencyMs: null,
-    p95LatencyMs: null,
+    slowRequestCount: 0,
     timeoutCount: 0,
     rateLimitCount: 0,
     exactCacheHitCount: 0,
@@ -76,44 +76,29 @@ test('runtime history integration support builds aggregate history insights', ()
   assert.equal(insights.failedCount, 1);
   assert.equal(insights.successRate, 75);
   assert.equal(insights.avgLatencyMs, 19125);
-  assert.equal(insights.p95LatencyMs, 45000);
-  assert.equal(insights.timeoutCount, 1);
-  assert.equal(insights.rateLimitCount, 1);
-  assert.equal(insights.exactCacheHitCount, 1);
-  assert.equal(insights.adaptiveCacheHitCount, 1);
-  assert.equal(insights.cacheHitCount, 2);
-  assert.equal(insights.cacheHitRate, 50);
-  assert.equal(insights.batchFallbackCount, 1);
-  assert.equal(insights.providerBreakdown.length, 2);
-  assert.deepEqual(insights.providerBreakdown[0], {
-    key: 'provider-a::gpt-5.4',
-    providerId: 'provider-a',
-    providerName: 'OpenAI',
-    model: 'gpt-5.4',
-    requestCount: 3,
-    segmentCount: 6,
-    successRate: 66.7,
-    avgLatencyMs: 10500,
-    failedCount: 1,
-    fallbackCount: 1
-  });
+  assert.equal(insights.slowRequestCount, 2);
+  assert.equal(insights.timeoutCount, 0);
+  assert.equal(insights.rateLimitCount, 0);
+  assert.equal(insights.exactCacheHitCount, 0);
+  assert.equal(insights.adaptiveCacheHitCount, 0);
+  assert.equal(insights.cacheHitCount, 0);
+  assert.equal(insights.cacheHitRate, null);
+  assert.equal(insights.batchFallbackCount, 0);
+  assert.deepEqual(insights.providerBreakdown, []);
   assert.deepEqual(
     insights.attentionItems.map((item) => item.code),
-    ['successRateWarning', 'p95LatencyHigh', 'timeoutsPresent', 'rateLimitsPresent', 'batchFallbacksPresent']
+    ['successRateWarning', 'slowRequestsPresent']
   );
   assert.deepEqual(
     insights.attentionItems.map((item) => item.filter),
     [
       { issue: 'failed' },
-      { issue: 'slow' },
-      { issue: 'timeout' },
-      { issue: 'rate_limit' },
-      { issue: 'fallback' }
+      { issue: 'slow' }
     ]
   );
 });
 
-test('runtime history integration support surfaces critical and weakest-provider attention items', () => {
+test('runtime history integration support surfaces critical attention items', () => {
   const insights = buildHistoryInsights([
     { providerId: 'provider-a', providerName: 'Primary', model: 'm1', status: 'failed', latencyMs: 100 },
     { providerId: 'provider-a', providerName: 'Primary', model: 'm1', status: 'failed', latencyMs: 200 },
@@ -125,21 +110,9 @@ test('runtime history integration support surfaces critical and weakest-provider
   assert.deepEqual(
     insights.attentionItems.map((item) => ({ severity: item.severity, code: item.code })),
     [
-      { severity: 'error', code: 'successRateCritical' },
-      { severity: 'error', code: 'weakProvider' }
+      { severity: 'error', code: 'successRateCritical' }
     ]
   );
-  assert.deepEqual(insights.attentionItems[1].values, {
-    provider: 'Primary',
-    model: 'm1',
-    value: 33.3
-  });
-  assert.deepEqual(insights.attentionItems[1].filter, {
-    provider: 'Primary',
-    model: 'm1'
-  });
-  assert.equal(insights.attentionItems[1].providerId, 'provider-a');
-  assert.equal(insights.attentionItems[1].model, 'm1');
 });
 
 test('runtime history integration support returns null metrics when no matching provider entries exist', () => {

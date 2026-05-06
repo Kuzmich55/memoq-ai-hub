@@ -39,6 +39,9 @@ function isHistoryRateLimitAttempt(attempt = {}) {
 }
 
 function hasHistoryFallback(entry = {}) {
+  if (entry?.issueFlags?.fallback === true) {
+    return true;
+  }
   if (entry.finalizedByFallbackRoute === true) {
     return true;
   }
@@ -55,14 +58,17 @@ function matchesHistoryIssue(entry = {}, issue = '') {
   }
 
   if (normalizedIssue === 'failed') {
+    if (entry?.issueFlags?.failed === true) return true;
     return String(entry?.status || '').trim().toLowerCase() === 'failed';
   }
 
   if (normalizedIssue === 'timeout') {
+    if (entry?.issueFlags?.timeout === true) return true;
     return getHistoryAttempts(entry).some(isHistoryTimeoutAttempt);
   }
 
   if (normalizedIssue === 'rate_limit') {
+    if (entry?.issueFlags?.rate_limit === true) return true;
     return getHistoryAttempts(entry).some(isHistoryRateLimitAttempt);
   }
 
@@ -71,6 +77,7 @@ function matchesHistoryIssue(entry = {}, issue = '') {
   }
 
   if (normalizedIssue === 'slow') {
+    if (entry?.issueFlags?.slow === true) return true;
     const latencyMs = Number(entry?.latencyMs);
     return Number.isFinite(latencyMs) && latencyMs > SLOW_HISTORY_LATENCY_MS;
   }
@@ -97,7 +104,18 @@ function filterHistoryEntries(historyEntries, filters = {}) {
     const submittedAtMs = parseTimeMs(entry.submittedAt);
     if (Number.isFinite(dateFromMs) && Number.isFinite(submittedAtMs) && submittedAtMs < dateFromMs) return false;
     if (Number.isFinite(dateToMs) && Number.isFinite(submittedAtMs) && submittedAtMs > dateToMs) return false;
-    return keyword ? JSON.stringify(entry).toLowerCase().includes(keyword) : true;
+    if (!keyword) return true;
+    const summaryText = [
+      entry.requestId,
+      entry.projectId,
+      entry.subject,
+      entry.providerId,
+      entry.providerName,
+      entry.model,
+      entry.status,
+      entry.segmentSummary
+    ].map((item) => String(item || '').toLowerCase()).join(' ');
+    return summaryText.includes(keyword);
   });
 }
 
