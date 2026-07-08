@@ -1495,6 +1495,7 @@ function EditableProfileForm({
                 dataSource={assetRows}
                 renderItem={(asset) => (
                   <List.Item
+                    className="responsive-list-actions"
                     actions={[
                       <Switch
                         key={`bind-${asset.id}`}
@@ -3180,7 +3181,7 @@ export default function App() {
                               setInstallDraftDirty(true);
                               setInstallDraft((current) => ({ ...current, customInstallDir: directory, selectedInstallDir: directory }));
                             }}
-                            addonAfter={<Button onClick={chooseInstallDirectory}>{t('dashboard.browseDirectory')}</Button>}
+                            addonAfter={<Button className="install-browse-button" onClick={chooseInstallDirectory}>{t('dashboard.browseDirectory')}</Button>}
                           />
                           <Text type="secondary">{t('dashboard.installCustomHint')}</Text>
                         </Space>

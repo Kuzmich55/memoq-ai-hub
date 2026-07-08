@@ -2321,7 +2321,7 @@ test('runtime exposes update status and portable download-page flow through app 
             status: 200,
             async json() {
               return {
-                version: '1.0.19',
+                version: '1.0.20',
                 publishedAt: '2026-03-26T00:00:00.000Z',
                 releaseNotesUrl: 'https://example.com/release',
                 assets: {
@@ -2346,7 +2346,7 @@ test('runtime exposes update status and portable download-page flow through app 
     const available = await runtime.checkForUpdates({ manual: true });
     const finalState = runtime.getAppState();
 
-    assert.equal(available.latestVersion, '1.0.19');
+    assert.equal(available.latestVersion, '1.0.20');
     assert.equal(available.portableDownloadUrl, 'https://example.com/release');
     assert.equal(finalState.updateCenter.updateStatus, 'available');
     await assert.rejects(() => runtime.downloadPortableUpdate(), /browser download page/i);

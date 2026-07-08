@@ -138,7 +138,7 @@ export default function PromptsPage({
               className="page-card"
               title={t('context.profileEditor')}
               extra={(
-                <Space>
+                <Space wrap className="responsive-action-bar">
                   <Button onClick={onDuplicateProfile}>{t('common.duplicate')}</Button>
                   <Button onClick={onDiscardProfile}>{t('context.discardChanges')}</Button>
                   <Button danger onClick={onDeleteProfile}>{t('context.deleteProfile')}</Button>

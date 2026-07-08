@@ -224,6 +224,32 @@ test('global responsive CSS covers wrapping, table overflow, shell header, and m
   assert.match(cssSource, /\.asset-library-item \.ant-list-item-action/);
 });
 
+test('legacy prompt and list action surfaces use scoped responsive actions', () => {
+  const appSource = readRendererSource('App.jsx');
+  const promptsSource = readRendererSource('pages/prompts/PromptsPage.jsx');
+  const cssSource = readRendererSource('index.css');
+
+  assert.match(appSource, /className="responsive-list-actions"/);
+  assert.match(promptsSource, /<Space wrap className="responsive-action-bar">/);
+  assert.match(cssSource, /\.responsive-list-actions \.ant-list-item-action/);
+  assert.match(cssSource, /\.builder-sticky-actions-inner \.ant-btn/);
+  assert.doesNotMatch(cssSource, /responsive-action-bar \.ant-btn\s*\{\s*width:\s*100%;/);
+});
+
+test('dashboard install path browse button stays horizontal inside input addon', () => {
+  const appSource = readRendererSource('App.jsx');
+  const cssSource = readRendererSource('index.css');
+
+  assert.match(appSource, /className="install-browse-button"/);
+  assert.match(appSource, /addonAfter=\{<Button className="install-browse-button" onClick=\{chooseInstallDirectory\}>/);
+  assert.match(cssSource, /\.ant-input-group-addon \.ant-btn,\s*\n\.install-browse-button/);
+  assert.match(cssSource, /\.ant-input-group > \.ant-input,\s*\n\.ant-input-group > \.ant-input-affix-wrapper/);
+  assert.match(cssSource, /min-width:\s*max-content/);
+  assert.match(cssSource, /\.ant-input-group-addon \.ant-btn > span:not\(\.anticon\),\s*\n\.install-browse-button > span:not\(\.anticon\)/);
+  assert.match(cssSource, /white-space:\s*nowrap/);
+  assert.match(cssSource, /overflow-wrap:\s*normal/);
+});
+
 test('buildDefaultPresetProfile enables advanced context toggles with source-first preview defaults', () => {
   const profile = buildDefaultPresetProfile();
 

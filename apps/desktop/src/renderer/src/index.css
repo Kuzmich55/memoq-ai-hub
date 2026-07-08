@@ -96,6 +96,35 @@ body,
   overflow-wrap: anywhere;
 }
 
+.ant-input-group-wrapper,
+.ant-input-wrapper,
+.ant-input-group {
+  min-width: 0;
+}
+
+.ant-input-group-addon {
+  width: auto;
+  white-space: nowrap;
+}
+
+.ant-input-group > .ant-input,
+.ant-input-group > .ant-input-affix-wrapper {
+  min-width: 80px;
+}
+
+.ant-input-group-addon .ant-btn,
+.install-browse-button {
+  width: auto;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.ant-input-group-addon .ant-btn > span:not(.anticon),
+.install-browse-button > span:not(.anticon) {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 .ant-select,
 .ant-select-selector,
 .ant-select-selection-overflow,
@@ -681,6 +710,17 @@ body,
   gap: 8px;
 }
 
+.responsive-list-actions {
+  gap: 12px;
+}
+
+.responsive-list-actions .ant-list-item-action {
+  margin-inline-start: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .provider-insight-focus-alert {
   border-color: var(--app-color-primary);
 }
@@ -927,9 +967,8 @@ body,
   .provider-model-manager-toolbar .ant-input-search,
   .provider-model-manager-toolbar .ant-btn,
   .builder-sticky-actions-inner,
-  .responsive-action-bar,
-  .responsive-action-bar .ant-space-item,
-  .responsive-action-bar .ant-btn {
+  .builder-sticky-actions-inner .ant-space-item,
+  .builder-sticky-actions-inner .ant-btn {
     width: 100%;
   }
 
@@ -938,7 +977,8 @@ body,
   }
 
   .provider-model-library-item .ant-list-item-action,
-  .asset-library-item .ant-list-item-action {
+  .asset-library-item .ant-list-item-action,
+  .responsive-list-actions .ant-list-item-action {
     margin-inline-start: 0;
     width: 100%;
     justify-content: flex-start;
