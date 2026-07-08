@@ -21,10 +21,12 @@ test('runtimeState maps role-based asset selections into legacy bindings', () =>
   });
 
   assert.deepEqual(profile.assetSelections, {
-    glossaryAssetId: 'asset-glossary'
+    glossaryAssetId: 'asset-glossary',
+    customTmAssetId: 'asset-custom-tm'
   });
   assert.deepEqual(profile.assetBindings, [
-    { assetId: 'asset-glossary', purpose: 'glossary' }
+    { assetId: 'asset-glossary', purpose: 'glossary' },
+    { assetId: 'asset-custom-tm', purpose: 'custom_tm' }
   ]);
 });
 

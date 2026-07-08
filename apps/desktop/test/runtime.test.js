@@ -26,6 +26,25 @@ DefaultOpenAI.default = DefaultOpenAI;
 
 class MockXmlParser {
   parse(xml) {
+    if (xml.includes('<tmx')) {
+      const sourceMatch = xml.match(/<tuv[^>]*xml:lang="([^"]+)"[\s\S]*?<seg>([\s\S]*?)<\/seg>/i);
+      const targetMatch = xml.match(/<tuv[^>]*xml:lang="([^"]+)"[\s\S]*?<seg>[\s\S]*?<\/seg>[\s\S]*?<tuv[^>]*xml:lang="([^"]+)"[\s\S]*?<seg>([\s\S]*?)<\/seg>/i);
+      const contextMatch = xml.match(/<prop[^>]*type="x-context-prev"[^>]*>([\s\S]*?)<\/prop>/i);
+      return {
+        tmx: {
+          body: {
+            tu: {
+              '@_tuid': 'tu-1',
+              prop: contextMatch ? { '@_type': 'x-context-prev', '#text': contextMatch[1] } : [],
+              tuv: [
+                { '@_lang': sourceMatch?.[1] || 'en', seg: sourceMatch?.[2] || '' },
+                { '@_lang': targetMatch?.[2] || 'fr', seg: targetMatch?.[3] || '' }
+              ]
+            }
+          }
+        }
+      };
+    }
     const entryMatch = xml.match(/<termEntry[^>]*id="([^"]+)"[\s\S]*?<langSet[^>]*xml:lang="([^"]+)"[\s\S]*?<term>([^<]+)<\/term>[\s\S]*?<langSet[^>]*xml:lang="([^"]+)"[\s\S]*?<term>([^<]+)<\/term>/i);
     if (!entryMatch) {
       return { tbx: { text: { body: { termEntry: [] } } } };
@@ -808,7 +827,7 @@ test('runtime rejects first-release placeholders that are hidden from saved prof
 
     assert.throws(() => runtime.saveProfile({
       name: 'Asset Profile',
-      userPrompt: '[Glossary:\n]{{glossary-text}}[\nEnd][Brief:\n]{{brief-text}}[\nEnd]\n{{custom-tm-target-text}}'
+      userPrompt: '[Glossary:\n]{{glossary-text}}[\nEnd][Brief:\n]{{brief-text}}[\nEnd]'
     }), /first-release profiles cannot use these placeholders/i);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -914,10 +933,12 @@ test('runtime maps role-based asset selections into legacy asset bindings', asyn
     });
 
     assert.deepEqual(profile.assetSelections, {
-      glossaryAssetId: 'asset-glossary'
+      glossaryAssetId: 'asset-glossary',
+      customTmAssetId: 'asset-custom-tm'
     });
     assert.deepEqual(profile.assetBindings, [
-      { assetId: 'asset-glossary', purpose: 'glossary' }
+      { assetId: 'asset-glossary', purpose: 'glossary' },
+      { assetId: 'asset-custom-tm', purpose: 'custom_tm' }
     ]);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -941,7 +962,8 @@ test('runtime derives role-based asset selections from legacy asset bindings', a
     });
 
     assert.deepEqual(profile.assetSelections, {
-      glossaryAssetId: 'asset-glossary'
+      glossaryAssetId: 'asset-glossary',
+      customTmAssetId: 'asset-custom-tm'
     });
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -2321,7 +2343,7 @@ test('runtime exposes update status and portable download-page flow through app 
             status: 200,
             async json() {
               return {
-                version: '1.0.20',
+                version: '1.0.21',
                 publishedAt: '2026-03-26T00:00:00.000Z',
                 releaseNotesUrl: 'https://example.com/release',
                 assets: {
@@ -2346,7 +2368,7 @@ test('runtime exposes update status and portable download-page flow through app 
     const available = await runtime.checkForUpdates({ manual: true });
     const finalState = runtime.getAppState();
 
-    assert.equal(available.latestVersion, '1.0.20');
+    assert.equal(available.latestVersion, '1.0.21');
     assert.equal(available.portableDownloadUrl, 'https://example.com/release');
     assert.equal(finalState.updateCenter.updateStatus, 'available');
     await assert.rejects(() => runtime.downloadPortableUpdate(), /browser download page/i);
@@ -4537,6 +4559,74 @@ test('runtime parses bound glossary assets and passes tb context to provider cal
   }
 });
 
+test('runtime parses bound custom TMX assets and passes scored custom TM matches to providers and history', async () => {
+  const tempRoot = createTempAppRoot();
+  const providerCalls = [];
+
+  try {
+    const runtime = await createRuntime({
+      appDataRoot: tempRoot,
+      providerRegistry: {
+        testConnection: async () => ({ ok: true, latencyMs: 12, message: 'ok' }),
+        translateSegment: async (request) => {
+          providerCalls.push(request);
+          return { text: 'Redemarrer le service', latencyMs: 10 };
+        }
+      }
+    });
+
+    const provider = await runtime.saveProvider({
+      name: 'OpenAI',
+      type: 'openai',
+      baseUrl: 'https://api.openai.com/v1',
+      apiKey: 'test-key',
+      models: [{ modelName: 'gpt-4.1-mini', enabled: true }]
+    });
+
+    const customTmSourcePath = path.join(tempRoot, 'uploaded-memory.tmx');
+    fs.writeFileSync(customTmSourcePath, [
+      '<tmx><body><tu tuid="tu-1">',
+      '<tuv xml:lang="en-US"><seg>Restart service</seg></tuv>',
+      '<tuv xml:lang="fr-FR"><seg>Redemarrer le service</seg></tuv>',
+      '</tu></body></tmx>'
+    ].join(''), 'utf8');
+    const customTmAsset = runtime.importAssetFromPath('custom_tm', customTmSourcePath);
+
+    const profile = await runtime.saveProfile({
+      name: 'TMX-backed',
+      providerId: provider.id,
+      useCustomTm: true,
+      userPrompt: '{{source-text}}',
+      assetBindings: [{ assetId: customTmAsset.id, purpose: 'custom_tm' }]
+    });
+
+    const result = await runtime.translate({
+      requestId: 'REQ-CUSTOM-TMX',
+      traceId: 'TRACE-CUSTOM-TMX',
+      contractVersion: '1',
+      sourceLanguage: 'en-US',
+      targetLanguage: 'fr-FR',
+      requestType: 'Plaintext',
+      profileResolution: { profileId: profile.id, useCase: 'interactive' },
+      metadata: {},
+      segments: [{ index: 0, text: 'Restart service', plainText: 'Restart service', tmSource: 'Restart service', tmTarget: 'Redemarrer le service' }]
+    });
+
+    assert.equal(result.statusCode, 200);
+    assert.equal(providerCalls.length, 1);
+    assert.equal(providerCalls[0].customTmMatches.length, 1);
+    assert.equal(providerCalls[0].customTmMatches[0].score, 100);
+    assert.equal(providerCalls[0].customTmMatches[0].bucket, '100%');
+    assert.equal(providerCalls[0].customTmMatches[0].assetName, 'uploaded-memory.tmx');
+
+    const history = runtime.getAppState().historyExplorer.items[0];
+    assert.match(history.contextSources.customTmMatches, /100% 100% Restart service => Redemarrer le service/);
+    assert.equal(history.segments[0].customTmMatches[0].bucket, '100%');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('runtime attaches advisory terminology QA findings without failing translation', async () => {
   const tempRoot = createTempAppRoot();
   const providerCalls = [];
@@ -4710,7 +4800,7 @@ test('runtime saveProfile aligns prompt templates and legacy prompt fields', asy
   }
 });
 
-test('runtime saveProfile keeps glossary role selections and drops hidden first-release asset roles', async () => {
+test('runtime saveProfile keeps glossary and custom TM role selections and drops hidden first-release asset roles', async () => {
   const tempRoot = createTempAppRoot();
   const providerCalls = [];
 
@@ -4736,8 +4826,11 @@ test('runtime saveProfile keeps glossary role selections and drops hidden first-
 
     const glossarySourcePath = path.join(tempRoot, 'role-glossary.csv');
     fs.writeFileSync(glossarySourcePath, 'restart,redemarrer\n', 'utf8');
+    const customTmSourcePath = path.join(tempRoot, 'role-custom-tm.csv');
+    fs.writeFileSync(customTmSourcePath, 'source,target\nRestart service,Redemarrer le service\n', 'utf8');
 
     const glossaryAsset = runtime.importAssetFromPath('glossary', glossarySourcePath);
+    const customTmAsset = runtime.importAssetFromPath('custom_tm', customTmSourcePath);
 
     const profile = await runtime.saveProfile({
       name: 'Role Asset Profile',
@@ -4746,15 +4839,18 @@ test('runtime saveProfile keeps glossary role selections and drops hidden first-
       userPrompt: '{{glossary-text}}\n{{source-text}}',
       assetSelections: {
         glossaryAssetId: glossaryAsset.id,
+        customTmAssetId: customTmAsset.id,
         briefAssetId: 'legacy-brief-id'
       }
     });
 
     assert.deepEqual(profile.assetBindings, [
-      { assetId: glossaryAsset.id, purpose: 'glossary' }
+      { assetId: glossaryAsset.id, purpose: 'glossary' },
+      { assetId: customTmAsset.id, purpose: 'custom_tm' }
     ]);
     assert.deepEqual(profile.assetSelections, {
-      glossaryAssetId: glossaryAsset.id
+      glossaryAssetId: glossaryAsset.id,
+      customTmAssetId: customTmAsset.id
     });
 
     const result = await runtime.translate({

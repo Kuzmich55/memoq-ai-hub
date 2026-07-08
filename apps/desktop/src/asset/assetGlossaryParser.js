@@ -14,6 +14,10 @@ const {
   normalizeTbEntry
 } = require('./assetTerminology');
 const {
+  createCustomTmFingerprint,
+  normalizeCustomTmEntry
+} = require('./assetTmMatcher');
+const {
   buildDetectedMapping,
   buildEntriesFromTbStructure,
   buildManualTbStructure,
@@ -68,6 +72,35 @@ function truncateText(value, maxCharacters) {
   }
 
   return normalized.slice(0, maxCharacters).trimEnd();
+}
+
+function decodeTextFile(filePath) {
+  const buffer = fs.readFileSync(filePath);
+  if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xfe) {
+    return buffer.subarray(2).toString('utf16le').replace(/^\uFEFF/, '');
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xfe && buffer[1] === 0xff) {
+    const swapped = Buffer.allocUnsafe(buffer.length - 2);
+    for (let index = 2; index + 1 < buffer.length; index += 2) {
+      swapped[index - 2] = buffer[index + 1];
+      swapped[index - 1] = buffer[index];
+    }
+    return swapped.toString('utf16le').replace(/^\uFEFF/, '');
+  }
+
+  const sampleLength = Math.min(buffer.length, 200);
+  let oddNulls = 0;
+  let evenNulls = 0;
+  for (let index = 0; index < sampleLength; index += 1) {
+    if (buffer[index] !== 0) continue;
+    if (index % 2 === 0) evenNulls += 1;
+    else oddNulls += 1;
+  }
+  if (oddNulls > sampleLength / 8 && oddNulls > evenNulls * 2) {
+    return buffer.toString('utf16le').replace(/^\uFEFF/, '');
+  }
+
+  return buffer.toString('utf8').replace(/^\uFEFF/, '');
 }
 
 function splitDelimitedLine(line, delimiter) {
@@ -153,7 +186,7 @@ function collectRawTableRowsFromAsset(asset) {
     return rows.filter((cells) => cells.some(Boolean));
   }
 
-  const raw = fs.readFileSync(asset.storedPath, 'utf8');
+  const raw = decodeTextFile(asset.storedPath);
   return collectRawTableRowsFromText(raw, extension);
 }
 
@@ -477,6 +510,135 @@ function getTermValue(node) {
   return '';
 }
 
+function getXmlText(node) {
+  if (node == null) {
+    return '';
+  }
+  if (typeof node === 'string' || typeof node === 'number' || typeof node === 'boolean') {
+    return normalizeWhitespace(node);
+  }
+  if (Array.isArray(node)) {
+    return normalizeWhitespace(node.map((item) => getXmlText(item)).filter(Boolean).join(' '));
+  }
+  if (typeof node === 'object') {
+    const parts = [];
+    if (node['#text']) {
+      parts.push(node['#text']);
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('@_') || key === '#text') {
+        continue;
+      }
+      if (value && typeof value === 'object' && Object.keys(value).some((item) => item.startsWith('@_'))) {
+        const marker = value['@_id'] || value['@_x'] || value['@_ctype'] || key;
+        parts.push(`{${marker}}`);
+      }
+      const nested = getXmlText(value);
+      if (nested) {
+        parts.push(nested);
+      }
+    }
+    return normalizeWhitespace(parts.join(' '));
+  }
+  return '';
+}
+
+function decodeBasicXmlEntities(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+function normalizeTmxContextValue(value) {
+  const decoded = decodeBasicXmlEntities(value);
+  const segValues = [];
+  decoded.replace(/<seg\b[^>]*>([\s\S]*?)<\/seg>/gi, (_match, inner) => {
+    segValues.push(normalizeWhitespace(String(inner || '').replace(/<[^>]+>/g, ' ')));
+    return '';
+  });
+  if (segValues.length) {
+    return normalizeWhitespace(segValues.join(' '));
+  }
+  return normalizeWhitespace(decoded.replace(/<[^>]+>/g, ' '));
+}
+
+function normalizeTmxLang(tuv = {}) {
+  return normalizeWhitespace(tuv?.['@_lang'] || tuv?.['@_xml:lang'] || tuv?.['@_langcode']);
+}
+
+function collectTmxProps(node = {}) {
+  const metadata = {};
+  const context = {};
+  for (const prop of toArray(node?.prop)) {
+    const type = normalizeWhitespace(prop?.['@_type']).toLowerCase();
+    const value = getXmlText(prop);
+    if (!type || !value) {
+      continue;
+    }
+    metadata[type] = value;
+    const contextValue = normalizeTmxContextValue(value);
+    if (['x-context-prev', 'x-context-pre', 'context-prev', 'context-pre', 'previous-source', 'prev-source', 'previoussource'].includes(type)) {
+      context.previousSource = contextValue;
+    }
+    if (['x-context-next', 'x-context-post', 'context-next', 'context-post', 'next-source', 'nextsource'].includes(type)) {
+      context.nextSource = contextValue;
+    }
+  }
+  return { metadata, context };
+}
+
+function parseTmxEntries(text, asset = {}) {
+  const parser = readXmlParser();
+  const parsed = parser.parse(text);
+  const body = parsed?.tmx?.body || {};
+  const units = toArray(body.tu);
+  const entries = [];
+
+  for (const unit of units) {
+    const unitProps = collectTmxProps(unit);
+    const tuId = normalizeWhitespace(unit?.['@_tuid'] || unit?.['@_id'] || `tu-${entries.length + 1}`);
+    const variants = toArray(unit?.tuv)
+      .map((tuv) => ({
+        lang: normalizeTmxLang(tuv),
+        text: getXmlText(tuv?.seg),
+        props: collectTmxProps(tuv)
+      }))
+      .filter((item) => item.lang && item.text);
+
+    for (const source of variants) {
+      for (const target of variants) {
+        if (source.lang === target.lang) continue;
+        const metadata = {
+          ...unitProps.metadata,
+          ...source.props.metadata,
+          tuid: tuId
+        };
+        const context = {
+          ...unitProps.context,
+          ...source.props.context
+        };
+        const entry = normalizeCustomTmEntry({
+          id: `${tuId}:${source.lang}:${target.lang}:${entries.length + 1}`,
+          sourceText: source.text,
+          targetText: target.text,
+          sourceLang: source.lang,
+          targetLang: target.lang,
+          metadata,
+          context
+        }, entries.length, asset);
+        if (entry) {
+          entries.push(entry);
+        }
+      }
+    }
+  }
+
+  return entries.slice(0, MAX_GLOSSARY_ROWS);
+}
+
 function parseTbxGlossary(text) {
   const parser = readXmlParser();
   const parsed = parser.parse(text);
@@ -529,7 +691,7 @@ function parseGlossaryAsset(asset, options = {}) {
   if (extension === '.xlsx') {
     parsed = parseWorkbookRows(asset.storedPath, options);
   } else {
-    const raw = fs.readFileSync(asset.storedPath, 'utf8');
+    const raw = decodeTextFile(asset.storedPath);
     parsed = extension === '.tbx'
       ? {
         entries: parseTbxGlossary(raw),
@@ -657,18 +819,47 @@ function parseCustomTmAsset(asset, options = {}) {
 
   if (extension === '.xlsx') {
     parsed = parseWorkbookRows(asset.storedPath, options);
+  } else if (extension === '.tmx') {
+    const raw = decodeTextFile(asset.storedPath);
+    const entries = parseTmxEntries(raw, asset);
+    parsed = {
+      entries,
+      parseInfo: {
+        parsingMode: 'tmx',
+        smartParsingAvailable: options.smartParsingAvailable === true,
+        smartParsingRecommended: false,
+        usedFallbackMapping: false,
+        hasExplicitHeaders: false,
+        detectedMapping: {},
+        mappingConfidence: { level: 'high', score: 1 },
+        mappingWarnings: [],
+        unmappedColumns: [],
+        availableColumns: ['sourceText', 'targetText', 'sourceLang', 'targetLang'],
+        upgradeHint: '',
+        languagePair: entries[0] ? { source: entries[0].sourceLang || '', target: entries[0].targetLang || '' } : { source: '', target: '' }
+      }
+    };
   } else {
-    const raw = fs.readFileSync(asset.storedPath, 'utf8');
+    const raw = decodeTextFile(asset.storedPath);
     parsed = extension === '.tsv'
       ? parseDelimitedGlossary(raw, '\t', options)
       : parsePlainGlossary(raw, options);
   }
 
-  const limitedEntries = (parsed.entries || []).filter(Boolean).slice(0, MAX_GLOSSARY_ROWS);
+  const limitedEntries = (parsed.entries || [])
+    .map((entry, index) => normalizeCustomTmEntry({
+      ...entry,
+      sourceText: entry.sourceText || entry.sourceTerm,
+      targetText: entry.targetText || entry.targetTerm,
+      sourceLang: entry.sourceLang || entry.srcLang,
+      targetLang: entry.targetLang || entry.tgtLang
+    }, index, asset))
+    .filter(Boolean)
+    .slice(0, MAX_GLOSSARY_ROWS);
 
   return {
     text: '',
-    fingerprint: createTbFingerprint(limitedEntries),
+    fingerprint: createCustomTmFingerprint(limitedEntries),
     rowCount: limitedEntries.length,
     entries: limitedEntries,
     parseInfo: parsed.parseInfo
@@ -685,6 +876,7 @@ module.exports = {
     parsePlainGlossary,
     parseTableRows,
     parseWorkbookRows,
-    parseTbxGlossary
+    parseTbxGlossary,
+    parseTmxEntries
   }
 };

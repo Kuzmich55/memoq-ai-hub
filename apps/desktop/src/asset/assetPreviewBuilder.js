@@ -64,12 +64,16 @@ function buildAssetPreview(asset, parsed, options = {}, helpers = {}) {
     return {
       type: assetType,
       rowCount: parsed.rowCount || entries.length,
-      columns: ['sourceTerm', 'targetTerm', 'srcLang', 'tgtLang'],
+      columns: ['sourceText', 'targetText', 'sourceLang', 'targetLang'],
       rows: rows.map((entry) => ({
-        sourceTerm: entry.sourceTerm,
-        targetTerm: entry.targetTerm,
-        srcLang: entry.srcLang || '',
-        tgtLang: entry.tgtLang || ''
+        sourceText: entry.sourceText || entry.sourceTerm,
+        targetText: entry.targetText || entry.targetTerm,
+        sourceTerm: entry.sourceTerm || entry.sourceText,
+        targetTerm: entry.targetTerm || entry.targetText,
+        sourceLang: entry.sourceLang || entry.srcLang || '',
+        targetLang: entry.targetLang || entry.tgtLang || '',
+        srcLang: entry.srcLang || entry.sourceLang || '',
+        tgtLang: entry.tgtLang || entry.targetLang || ''
       })),
       truncated: entries.length > rows.length,
       ...(parsed.parseInfo || {})

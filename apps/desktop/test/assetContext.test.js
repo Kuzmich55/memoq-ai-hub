@@ -88,6 +88,7 @@ test('asset context exposes supported import rules', () => {
   const rules = getAssetImportRules();
 
   assert.deepEqual(rules.glossary.extensions, ['.csv', '.tsv', '.txt', '.xlsx', '.tbx']);
+  assert.deepEqual(rules.customTm.extensions, ['.csv', '.tsv', '.txt', '.xlsx', '.tmx']);
   assert.deepEqual(rules.brief.extensions, ['.txt', '.md']);
 });
 
@@ -175,14 +176,47 @@ test('asset context builds preview rows for custom tm assets', () => {
     assert.equal(preview.rowCount, 2);
     assert.equal(preview.parsingMode, 'fallback');
     assert.equal(preview.smartParsingAvailable, false);
-    assert.deepEqual(preview.columns, ['sourceTerm', 'targetTerm', 'srcLang', 'tgtLang']);
+    assert.deepEqual(preview.columns, ['sourceText', 'targetText', 'sourceLang', 'targetLang']);
     assert.deepEqual(preview.rows[0], {
+      sourceText: 'Save',
+      targetText: 'Enregistrer',
       sourceTerm: 'Save',
       targetTerm: 'Enregistrer',
+      sourceLang: '',
+      targetLang: '',
       srcLang: '',
       tgtLang: ''
     });
     assert.equal(preview.truncated, false);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('asset context builds custom tm matcher from bound assets', () => {
+  const tempDir = createTempDir();
+  try {
+    const customTmPath = path.join(tempDir, 'custom-tm.csv');
+    fs.writeFileSync(customTmPath, 'source,target,srcLang,tgtLang\nRestart service,Redemarrer le service,en,fr\n', 'utf8');
+
+    const context = buildAssetContext({
+      assets: [{
+        id: 'asset-tm',
+        type: ASSET_PURPOSES.customTm,
+        name: 'custom-tm.csv',
+        fileName: 'custom-tm.csv',
+        storedPath: customTmPath,
+        sha256: 'hash-tm'
+      }],
+      assetBindings: [{ assetId: 'asset-tm', purpose: ASSET_PURPOSES.customTm }],
+      profile: { useCustomTm: true },
+      cache: new Map()
+    });
+
+    assert.equal(context.customTm.entries.length, 1);
+    assert.equal(context.customTm.entries[0].sourceText, 'Restart service');
+    assert.equal(context.customTm.matcher.entries.length, 1);
+    assert.equal(Boolean(context.customTmFingerprint), true);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

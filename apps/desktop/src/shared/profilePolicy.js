@@ -4,18 +4,21 @@ const FIRST_RELEASE_FIXED_PROFILE_FIELDS = Object.freeze({});
 
 const FIRST_RELEASE_DISABLED_PLACEHOLDER_TOKENS = new Set([
   'brief-text',
-  'custom-tm-source-text',
-  'custom-tm-target-text',
   'full-text'
 ]);
 
 const FIRST_RELEASE_VISIBLE_ASSET_TYPES = new Set([
-  'glossary'
+  'glossary',
+  'custom_tm'
 ]);
 
 function normalizeAssetSelections(assetSelections = {}) {
   const glossaryAssetId = String(assetSelections?.glossaryAssetId || '').trim();
-  return glossaryAssetId ? { glossaryAssetId } : {};
+  const customTmAssetId = String(assetSelections?.customTmAssetId || assetSelections?.customTm || '').trim();
+  return {
+    ...(glossaryAssetId ? { glossaryAssetId } : {}),
+    ...(customTmAssetId ? { customTmAssetId } : {})
+  };
 }
 
 function normalizeAssetBindings(assetBindings = []) {

@@ -39,6 +39,7 @@ function buildHistoryPromptViewSingle({
     requestType: payload?.requestType || 'Plaintext',
     assetContext,
     tbContext: segment?.tbContext || null,
+    customTmMatches: segment?.customTmMatches || [],
     segmentMetadata: segment?.segmentMetadata || null,
     neighborContext: segment?.neighborContext || null
   });
@@ -219,6 +220,15 @@ function summarizeContextSources({
     })
     .filter(Boolean)
     .join('\n\n');
+  const customTmMatches = (incomingSegments || [])
+    .flatMap((segment) => (segment?.customTmMatches || []).map((match) => ({
+      index: Number(segment?.index),
+      match
+    })))
+    .slice(0, 8)
+    .map(({ index, match }) => `#${index}: ${Number(match.score || 0)}% ${match.bucket || ''} ${match.sourceText || '-'} => ${match.targetText || '-'}${match.assetName ? ` (${match.assetName})` : ''}`)
+    .filter(Boolean)
+    .join('\n');
   const previewContext = effectiveRequestPreviewContext
     ? [
       effectiveRequestPreviewContext.documentName ? `Document: ${effectiveRequestPreviewContext.documentName}` : '',
@@ -232,6 +242,7 @@ function summarizeContextSources({
     documentSummary: String(effectiveRequestPreviewContext?.summary || '').trim(),
     terminology,
     tmHints,
+    customTmMatches,
     tmDiagnostics,
     projectMetadata,
     previewContext
@@ -482,6 +493,7 @@ function buildHistoryEntry({
         tmSource: String(segment.tmSource || ''),
         tmTarget: String(segment.tmTarget || ''),
         tmDiagnostics: incomingSegment?.tmDiagnostics || null,
+        customTmMatches: incomingSegment?.customTmMatches || [],
         qaSummary: incomingSegment?.qaSummary || { ok: true, blocking: false, issues: [] },
         tbContext: incomingSegment?.tbContext || null,
         previewWarmup: incomingSegment?.previewWarmup || null,

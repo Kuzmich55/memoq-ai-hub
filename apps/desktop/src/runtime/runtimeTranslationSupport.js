@@ -85,6 +85,8 @@ function createTranslationCacheKey({
   segmentMetadata,
   profile,
   assetContext,
+  customTmFingerprint,
+  customTmMatches,
   tbFingerprint,
   previewContext,
   segmentPreviewContext,
@@ -124,6 +126,14 @@ function createTranslationCacheKey({
     assetContext: {
       glossaryFingerprint: String(assetContext?.glossaryFingerprint || ''),
       briefFingerprint: String(assetContext?.briefFingerprint || ''),
+      customTmFingerprint: String(customTmFingerprint || assetContext?.customTmFingerprint || ''),
+      customTmMatches: (Array.isArray(customTmMatches) ? customTmMatches : []).map((match) => ({
+        sourceText: String(match.sourceText || ''),
+        targetText: String(match.targetText || ''),
+        score: Number(match.score || 0),
+        bucket: String(match.bucket || ''),
+        assetId: String(match.assetId || '')
+      })),
       tbFingerprint: String(tbFingerprint || '')
     },
     previewContext: previewCacheContext || previewContext || null,

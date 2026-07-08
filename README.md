@@ -28,11 +28,11 @@ The repository contains runtime code for more advanced capabilities, but not eve
 
 ## Recent Updates
 
-`v1.0.16` focuses on update-check responsiveness and clearer dropdowns:
+`v1.0.20` adds uploaded TM/TMX matching for AI prompts:
 
-- Update checks now time out cleanly instead of leaving the Dashboard stuck on Checking, with friendly English and Chinese messages and diagnostic logging.
-- The Updates card keeps the latest known version readable during checks and shows same-version manifests as up to date.
-- Select controls and dropdowns now fill their content area more consistently while long provider, model, asset, and path names wrap naturally.
+- Custom TM assets can now include TMX files, including memoQ-exported UTF-16 TMX with neighbor context metadata.
+- The desktop runtime calculates an explainable `AI Hub TM score` and memoQ-style buckets (`101%`, `100%`, `95-99`, `85-94`, `75-84`, `<75`).
+- Uploaded TM matches are kept separate from memoQ SDK TM hints and are recorded in translation history for diagnostics.
 
 ## Runtime Layout
 

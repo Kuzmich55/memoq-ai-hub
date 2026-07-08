@@ -78,15 +78,17 @@ Unblock-File -LiteralPath "C:\Program Files\memoQ\memoQ-11\Addins\MemoQ.AI.Hub.P
 4. 选择一个模型作为 **默认模型**。
 5. 确认模型已启用后再次保存 Provider。
 
-## 第三步：上传术语表
+## 第三步：上传资产
 
-若暂无术语表需求，可跳过此步骤。
+若暂无术语表或自定义 TM 需求，可跳过此步骤。
 
 1. 在左侧导航点击 **资产（Assets）**。
-2. 点击 **+ 新增** -> **上传术语表**。
-3. 选择本地术语文件，支持 TBX 和常见表格格式。
+2. 点击 **+ 新增**，选择要上传的资产类型。
+3. 选择本地文件，支持 TBX、TMX 和常见表格格式。
 4. 上传完成后点击 **预览** 查看解析结果。
 5. 如识别置信度较低，可手动指定源列、目标列和语言对，然后保存映射。
+
+对于上传的 Custom TM 资产，memoQ AI Hub 会在本地计算 `AI Hub TM score`，并把最佳命中与 memoQ 自带的 best fuzzy TM hint 分开传给 AI Provider。memoQ 导出的 TMX 如果包含相邻上下文，也可以在源文和上下文证据同时匹配时产生 `101%` 命中。
 
 ## 第四步：在 Builder 中构建翻译 Profile
 
@@ -117,6 +119,7 @@ Unblock-File -LiteralPath "C:\Program Files\memoQ\memoQ-11\Addins\MemoQ.AI.Hub.P
 ### 4.3 绑定术语表
 
 - 在 **TB** 下拉框中选择已上传的术语表
+- 如需使用本地上传的 TMX 或表格记忆库，在 **Custom TM** 下拉框中选择对应资产
 - 如无术语表，可保持为空
 
 ### 4.4 更多设置

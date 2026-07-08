@@ -61,7 +61,7 @@ test('asset preview builder shapes custom tm preview rows', () => {
     {
       rowCount: 1,
       entries: [
-        { sourceTerm: 'Save', targetTerm: 'Enregistrer', srcLang: '', tgtLang: '' }
+        { sourceText: 'Save', targetText: 'Enregistrer', sourceLang: '', targetLang: '' }
       ],
       parseInfo: {
         parsingMode: 'fallback',
@@ -73,8 +73,8 @@ test('asset preview builder shapes custom tm preview rows', () => {
   );
 
   assert.equal(preview.type, 'custom_tm');
-  assert.deepEqual(preview.columns, ['sourceTerm', 'targetTerm', 'srcLang', 'tgtLang']);
-  assert.equal(preview.rows[0].targetTerm, 'Enregistrer');
+  assert.deepEqual(preview.columns, ['sourceText', 'targetText', 'sourceLang', 'targetLang']);
+  assert.equal(preview.rows[0].targetText, 'Enregistrer');
   assert.equal(preview.parsingMode, 'fallback');
 });
 

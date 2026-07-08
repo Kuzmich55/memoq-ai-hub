@@ -706,6 +706,7 @@ function createProviderRegistry(options = {}) {
     sourceText,
     tmSource,
     tmTarget,
+    customTmMatches,
     metadata,
     previewContext,
     profile,
@@ -724,6 +725,7 @@ function createProviderRegistry(options = {}) {
       sourceText,
       tmSource,
       tmTarget,
+      customTmMatches: profile?.useCustomTm === false ? [] : (Array.isArray(customTmMatches) ? customTmMatches : []),
       metadata,
       previewContext,
       segmentPreviewContext,
@@ -951,6 +953,9 @@ function createProviderRegistry(options = {}) {
       sourceText: String(segment.sourceText || ''),
       tmSource: (profile?.useBestFuzzyTm || profile?.useCustomTm) ? String(segment.tmSource || '') : '',
       tmTarget: (profile?.useBestFuzzyTm || profile?.useCustomTm) ? String(segment.tmTarget || '') : '',
+      customTmMatches: profile?.useCustomTm === false
+        ? []
+        : (Array.isArray(segment.customTmMatches) ? segment.customTmMatches : []),
       segmentMetadata: profile?.useMetadata
         ? normalizeSegmentMetadataItem(segment.segmentMetadata || {}, Number(segment.index))
         : undefined,

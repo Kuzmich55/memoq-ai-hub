@@ -9,6 +9,10 @@ const {
   createTbFingerprint,
   createTbMatcher
 } = require('./assetTerminology');
+const {
+  createCustomTmFingerprint,
+  createCustomTmMatcher
+} = require('./assetTmMatcher');
 
 const ASSET_SEPARATOR = '\n\n---\n\n';
 
@@ -56,13 +60,14 @@ function buildAssetContext({
   const boundEntries = getBoundAssetsByPurpose(assets, assetBindings);
   const glossaryEntries = [];
   const briefEntries = [];
+  const customTmParsedEntries = [];
   const assetHints = [];
 
   for (const entry of boundEntries) {
     const purpose = normalizeAssetPurpose(entry.binding.purpose || entry.asset.type);
     assetHints.push(`${purpose}:${entry.asset.name}`);
 
-    if (purpose !== ASSET_PURPOSES.glossary && purpose !== ASSET_PURPOSES.brief) {
+    if (purpose !== ASSET_PURPOSES.glossary && purpose !== ASSET_PURPOSES.brief && purpose !== ASSET_PURPOSES.customTm) {
       continue;
     }
 
@@ -72,8 +77,13 @@ function buildAssetContext({
       });
       if (purpose === ASSET_PURPOSES.glossary) {
         glossaryEntries.push(parsed);
-      } else {
+      } else if (purpose === ASSET_PURPOSES.brief) {
         briefEntries.push(parsed);
+      } else {
+        customTmParsedEntries.push({
+          parsed,
+          asset: entry.asset
+        });
       }
     } catch (error) {
       throw new Error(`Failed to parse ${purpose} asset "${entry.asset.name}": ${error.message}`);
@@ -107,6 +117,18 @@ function buildAssetContext({
   const tbMetadataText = tb.languagePair?.source || tb.languagePair?.target
     ? `TB language pair: ${tb.languagePair.source || ''} -> ${tb.languagePair.target || ''}`.trim()
     : '';
+  const customTmEntries = customTmParsedEntries.flatMap((entry) => (
+    (entry.parsed.entries || []).map((tmEntry) => ({
+      ...tmEntry,
+      assetId: tmEntry.assetId || entry.asset.id,
+      assetName: tmEntry.assetName || entry.asset.name
+    }))
+  ));
+  const customTm = {
+    entries: customTmEntries,
+    fingerprint: createCustomTmFingerprint(customTmEntries),
+    matcher: createCustomTmMatcher(customTmEntries)
+  };
 
   return {
     glossaryText: profile?.useUploadedGlossary === false ? '' : glossary.text,
@@ -114,8 +136,10 @@ function buildAssetContext({
     glossaryFingerprint: profile?.useUploadedGlossary === false ? fingerprintText('') : glossary.fingerprint,
     briefText: profile?.useBrief === false ? '' : brief.text,
     briefFingerprint: profile?.useBrief === false ? fingerprintText('') : brief.fingerprint,
+    customTmFingerprint: profile?.useCustomTm === false ? fingerprintText('') : customTm.fingerprint,
     assetHints,
-    tb
+    tb,
+    customTm: profile?.useCustomTm === false ? { entries: [], fingerprint: fingerprintText(''), matcher: createCustomTmMatcher([]) } : customTm
   };
 }
 

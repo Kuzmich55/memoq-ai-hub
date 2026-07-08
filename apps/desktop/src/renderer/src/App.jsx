@@ -1158,7 +1158,8 @@ function buildHistorySegments(record) {
       source: segment.sourceText || segment.source || '',
       target: segment.targetText || segment.target || '',
       tmSource: segment.tmSource || '',
-      tmTarget: segment.tmTarget || ''
+      tmTarget: segment.tmTarget || '',
+      customTmMatches: Array.isArray(segment.customTmMatches) ? segment.customTmMatches : []
     }));
   }
 
@@ -1172,7 +1173,8 @@ function buildHistorySegments(record) {
     source: segment.source || '',
     target: translations.find((translation) => Number(translation.index) === index)?.text || '',
     tmSource: segment.tmSource || '',
-    tmTarget: segment.tmTarget || ''
+    tmTarget: segment.tmTarget || '',
+    customTmMatches: Array.isArray(segment.customTmMatches) ? segment.customTmMatches : []
   }));
 }
 
@@ -3827,6 +3829,9 @@ export default function App() {
                 <Descriptions.Item label={t('history.contextSourceTmHints')}>
                   <HoverText value={getHistoryContextSources(currentHistoryRecord).tmHints} />
                 </Descriptions.Item>
+                <Descriptions.Item label={t('history.contextSourceCustomTmMatches')}>
+                  <HoverText value={getHistoryContextSources(currentHistoryRecord).customTmMatches} />
+                </Descriptions.Item>
                 <Descriptions.Item label={t('history.contextSourceTmDiagnostics')}>
                   <HoverText value={getHistoryContextSources(currentHistoryRecord).tmDiagnostics} />
                 </Descriptions.Item>
@@ -3873,6 +3878,11 @@ export default function App() {
                       <Text>{`${t('history.target')}: ${segment.target || '-'}`}</Text>
                       {(segment.tmSource || segment.tmTarget) ? (
                         <Text type="secondary">{`${t('history.tmSource')}: ${segment.tmSource || '-'} | ${t('history.tmTarget')}: ${segment.tmTarget || '-'}`}</Text>
+                      ) : null}
+                      {segment.customTmMatches?.length ? (
+                        <Text type="secondary">
+                          {`${t('history.customTmMatches')}: ${segment.customTmMatches.map((match) => `${match.score || 0}% ${match.bucket || ''} ${match.assetName || ''}`.trim()).join(' | ')}`}
+                        </Text>
                       ) : null}
                     </Space>
                   </List.Item>

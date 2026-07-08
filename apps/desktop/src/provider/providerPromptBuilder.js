@@ -195,6 +195,10 @@ function buildPromptTemplateContext({
   const normalizedTbContext = tbContext && typeof tbContext === 'object' ? tbContext : {};
   const hasSegmentGlossary = Object.prototype.hasOwnProperty.call(normalizedTbContext, 'glossaryText');
   const hasSegmentTbMetadata = Object.prototype.hasOwnProperty.call(normalizedTbContext, 'tbMetadataText');
+  const customTmMatches = Array.isArray(normalizedTbContext.customTmMatches)
+    ? normalizedTbContext.customTmMatches
+    : [];
+  const topCustomTmMatch = customTmMatches[0] || null;
 
   return createTemplateContext({
     sourceLanguage,
@@ -206,8 +210,8 @@ function buildPromptTemplateContext({
     glossaryText: String(hasSegmentGlossary ? (normalizedTbContext.glossaryText || '') : (normalizedAssetContext.glossaryText || '')),
     tbMetadataText: String(hasSegmentTbMetadata ? (normalizedTbContext.tbMetadataText || '') : (normalizedAssetContext.tbMetadataText || '')),
     briefText: normalizedAssetContext.briefText,
-    customTmSourceText: profile?.useCustomTm === false ? '' : tmSource,
-    customTmTargetText: profile?.useCustomTm === false ? '' : tmTarget,
+    customTmSourceText: profile?.useCustomTm === false ? '' : (topCustomTmMatch?.sourceText || tmSource),
+    customTmTargetText: profile?.useCustomTm === false ? '' : (topCustomTmMatch?.targetText || tmTarget),
     aboveText: segment.above,
     belowText: segment.below,
     aboveSourceText: segment.aboveSourceText,
@@ -335,7 +339,10 @@ function renderSegmentProfileInstructions({
     tmTarget: segment.tmTarget,
     profile,
     assetContext,
-    tbContext: segment.tbContext || null,
+    tbContext: {
+      ...(segment.tbContext || {}),
+      customTmMatches: Array.isArray(segment.customTmMatches) ? segment.customTmMatches : []
+    },
     previewContext,
     segmentPreviewContext: segment.previewContext || null
   });
@@ -353,6 +360,19 @@ function buildSegmentPayload({
 }) {
   const tmSourceText = String(segment.tmSource || '');
   const tmTargetText = String(segment.tmTarget || '');
+  const customTmMatches = profile?.useCustomTm === false
+    ? []
+    : (Array.isArray(segment.customTmMatches) ? segment.customTmMatches : [])
+      .map((match) => ({
+        sourceText: String(match.sourceText || ''),
+        targetText: String(match.targetText || ''),
+        score: Number(match.score || 0),
+        bucket: String(match.bucket || ''),
+        scoreType: String(match.scoreType || 'AI Hub TM score'),
+        assetName: String(match.assetName || ''),
+        contextMatched: match.contextMatched === true
+      }))
+      .filter((match) => match.sourceText && match.targetText);
   const matchedTerms = Array.isArray(segment?.tbContext?.termHits) ? segment.tbContext.termHits : [];
   const terminologyInstructions = String(segment?.tbContext?.glossaryText || '');
   const tbMetadataText = String(segment?.tbContext?.tbMetadataText || '');
@@ -367,6 +387,13 @@ function buildSegmentPayload({
       sourceText: tmSourceText,
       targetText: tmTargetText,
       available: Boolean(tmSourceText || tmTargetText)
+    },
+    customTmMatches: {
+      matches: customTmMatches,
+      available: customTmMatches.length > 0,
+      guidance: customTmMatches.length
+        ? 'Use 100% and 95-99 AI Hub TM score matches as strong guidance, 85-94 as preferred reference, and 75-84 as terminology or style reference.'
+        : ''
     },
     terminology: {
       instructions: terminologyInstructions,
@@ -535,9 +562,14 @@ function buildPrompt(args, helpers = {}) {
     requestType,
     assetContext,
     tbContext,
+    customTmMatches,
     segmentMetadata,
     neighborContext
   } = args;
+  const normalizedTbContext = {
+    ...(tbContext || {}),
+    customTmMatches: Array.isArray(customTmMatches) ? customTmMatches : []
+  };
   const templateContext = buildPromptTemplateContext({
     sourceLanguage,
     targetLanguage,
@@ -546,7 +578,7 @@ function buildPrompt(args, helpers = {}) {
     tmTarget,
     profile,
     assetContext,
-    tbContext,
+    tbContext: normalizedTbContext,
     previewContext,
     segmentPreviewContext
   });
@@ -556,9 +588,10 @@ function buildPrompt(args, helpers = {}) {
     plainText: tbContext?.sourcePlainText || sourceText,
     tmSource,
     tmTarget,
+    customTmMatches: Array.isArray(customTmMatches) ? customTmMatches : [],
     segmentMetadata,
     previewContext: segmentPreviewContext || null,
-    tbContext: tbContext || null,
+    tbContext: normalizedTbContext,
     neighborContext: neighborContext || null
   };
   const payload = buildRequestPayload({

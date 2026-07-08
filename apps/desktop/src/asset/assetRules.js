@@ -11,7 +11,7 @@ const ASSET_IMPORT_RULES = {
     extensions: ['.csv', '.tsv', '.txt', '.xlsx', '.tbx']
   },
   [ASSET_PURPOSES.customTm]: {
-    extensions: ['.csv', '.tsv', '.txt', '.xlsx']
+    extensions: ['.csv', '.tsv', '.txt', '.xlsx', '.tmx']
   },
   [ASSET_PURPOSES.brief]: {
     extensions: ['.txt', '.md']

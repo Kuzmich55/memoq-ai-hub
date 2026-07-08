@@ -78,15 +78,17 @@ Then restart memoQ.
 4. Set one model as the **default model**.
 5. Save the provider again after confirming the model is enabled.
 
-## Step 3: Upload a Terminology Asset
+## Step 3: Upload Assets
 
-If you do not need terminology support yet, you can skip this step.
+If you do not need terminology or custom TM support yet, you can skip this step.
 
 1. Open **Assets**.
-2. Click **+ New** -> **Upload terminology asset**.
-3. Choose a local terminology file. TBX and common spreadsheet formats are supported.
+2. Click **+ New** and choose the asset type.
+3. Choose a local file. TBX, TMX, and common spreadsheet formats are supported.
 4. After upload, click **Preview** to inspect the parsed result.
 5. If the parser confidence is low, manually assign the source column, target column, and language pair, then save the mapping.
+
+For uploaded custom TM assets, memoQ AI Hub calculates an `AI Hub TM score` locally and sends the best matches to the provider separately from memoQ's own best fuzzy TM hint. TMX files exported from memoQ can also use neighbor context to produce `101%` matches when the source text and surrounding segment evidence match.
 
 ## Step 4: Build a Translation Profile in Builder
 
@@ -117,6 +119,7 @@ The remaining role instructions, formatting protection, and JSON structure are a
 ### 4.3 Bind a Terminology Asset
 
 - Select the uploaded TB asset from the **TB** dropdown
+- Select the uploaded custom TM asset from the **Custom TM** dropdown if you want local TMX/table memory matches
 - Leave it empty if terminology is not needed
 
 ### 4.4 Advanced Options

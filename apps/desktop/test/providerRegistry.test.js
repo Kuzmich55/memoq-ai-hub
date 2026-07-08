@@ -484,6 +484,16 @@ test('provider registry emits tm hints and terminology as structured per-segment
       sourceText: 'Restart workspace',
       tmSource: 'Restart workspace',
       tmTarget: 'Redemarrer l’espace de travail',
+      customTmMatches: [
+        {
+          sourceText: 'Restart workspace',
+          targetText: 'Redemarrer l’espace de travail',
+          score: 100,
+          bucket: '100%',
+          scoreType: 'AI Hub TM score',
+          assetName: 'sample.tmx'
+        }
+      ],
       metadata: {},
       profile: {
         userPrompt: '{{source-text}}'
@@ -501,6 +511,9 @@ test('provider registry emits tm hints and terminology as structured per-segment
 
   assert.match(calls.responses[0].request.input, /"tmHints":\s*\{\s*"sourceText":\s*"Restart workspace"/);
   assert.match(calls.responses[0].request.input, /"tmHints":\s*\{[\s\S]*"targetText":\s*"Redemarrer l’espace de travail"/);
+  assert.match(calls.responses[0].request.input, /"customTmMatches":\s*\{\s*"matches":\s*\[/);
+  assert.match(calls.responses[0].request.input, /"score":\s*100/);
+  assert.match(calls.responses[0].request.input, /"bucket":\s*"100%"/);
   assert.match(calls.responses[0].request.input, /"terminology":\s*\{\s*"instructions":\s*"Required terminology:/);
   assert.match(calls.responses[0].request.input, /"matches":\s*\[[\s\S]*"sourceTerm":\s*"workspace"/);
   assert.doesNotMatch(calls.responses[0].request.instructions, /Required terminology:/);
@@ -537,6 +550,43 @@ test('provider registry removes wrapped glossary and brief sections when empty',
 
   assert.doesNotMatch(calls.responses[0].request.input, /Glossary:/);
   assert.doesNotMatch(calls.responses[0].request.input, /Brief:/);
+});
+
+test('provider registry omits uploaded custom TM matches when disabled', async () => {
+  const { MockOpenAI, calls } = createMockOpenAI({
+    responsesCreate: async () => ({
+      output_parsed: { translation: 'Bonjour' },
+      output_text: 'Bonjour'
+    })
+  });
+
+  await withMockedModules({ openai: MockOpenAI }, async () => {
+    const { createProviderRegistry: loadRegistry } = require(providerRegistryModulePath);
+    const registry = loadRegistry();
+
+    await registry.translateSegment({
+      provider: { type: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: [] },
+      apiKey: 'test',
+      modelName: 'gpt-4.1-mini',
+      sourceLanguage: 'EN',
+      targetLanguage: 'FR',
+      sourceText: 'Restart workspace',
+      tmSource: 'Restart workspace',
+      tmTarget: 'Redemarrer l’espace de travail',
+      customTmMatches: [
+        { sourceText: 'Restart workspace', targetText: 'Redemarrer l’espace de travail', score: 100, bucket: '100%' }
+      ],
+      metadata: {},
+      profile: {
+        userPrompt: '{{source-text}}',
+        useCustomTm: false
+      },
+      requestType: 'Plaintext'
+    });
+  });
+
+  assert.match(calls.responses[0].request.input, /"customTmMatches":\s*\{\s*"matches":\s*\[\]/);
+  assert.doesNotMatch(calls.responses[0].request.input, /AI Hub TM score/);
 });
 
 test('provider registry attaches provider-side prompt cache fields when enabled', async () => {

@@ -87,6 +87,7 @@ const {
 } = require('./runtimeHistoryIntegrationSupport');
 const {
   buildSegmentTbContext,
+  buildSegmentCustomTmContext,
   buildTemplatePreflightContext,
   createEmptyAssetContext,
   summarizeAssets,
@@ -2553,6 +2554,7 @@ async function createRuntime(options = {}) {
           sourceText: segment.sourceText,
           tmSource: segment.tmSource,
           tmTarget: segment.tmTarget,
+          customTmMatches: segment.customTmMatches || [],
           segmentMetadata: segment.segmentMetadata,
           previewContext: segment.previewContext || null,
           tbContext: segment.tbContext || null
@@ -2646,6 +2648,7 @@ async function createRuntime(options = {}) {
             sourceText: segment.sourceText,
             tmSource: segment.tmSource,
             tmTarget: segment.tmTarget,
+            customTmMatches: segment.customTmMatches || [],
             metadata: normalizedMetadata,
             previewContext,
             profile,
@@ -3217,6 +3220,16 @@ async function createRuntime(options = {}) {
     }
 
     attachNeighborContexts(incomingSegments);
+    for (const segment of incomingSegments) {
+      const customTmContext = buildSegmentCustomTmContext({
+        assetContext,
+        segment,
+        payload,
+        profile
+      });
+      segment.customTmMatches = customTmContext.matches;
+      segment.customTmFingerprint = customTmContext.fingerprint;
+    }
 
     const effectiveRequestPreviewContext = profile.usePreviewContext === false ? null : requestPreviewContext;
     try {
@@ -3267,6 +3280,8 @@ async function createRuntime(options = {}) {
             segmentMetadata: segment.segmentMetadata,
             profile,
             assetContext,
+            customTmFingerprint: segment.customTmFingerprint || '',
+            customTmMatches: segment.customTmMatches || [],
             tbFingerprint: segment.tbContext?.fingerprint || '',
             previewContext: effectiveRequestPreviewContext,
             segmentPreviewContext: segment.previewContext,
@@ -3288,7 +3303,9 @@ async function createRuntime(options = {}) {
         const unresolved = [];
         for (const segment of remainingSegments) {
           const exactCachedText = persistence.readTranslationCache(segment.cacheKey);
-          const cachedText = exactCachedText || persistence.readTranslationCache(segment.adaptiveCacheKey);
+          const hasCustomTmMatches = Array.isArray(segment.customTmMatches) && segment.customTmMatches.length > 0;
+          const adaptiveCachedText = hasCustomTmMatches ? '' : persistence.readTranslationCache(segment.adaptiveCacheKey);
+          const cachedText = exactCachedText || adaptiveCachedText;
           if (cachedText) {
             translatedByIndex.set(segment.index, { index: segment.index, text: cachedText, fromCache: true });
             attempts.push({

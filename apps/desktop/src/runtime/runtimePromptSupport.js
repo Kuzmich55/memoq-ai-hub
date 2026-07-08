@@ -7,6 +7,10 @@ const {
   renderMatchedTerminologyBlock
 } = require('../asset/assetTerminology');
 const {
+  createCustomTmMatcher,
+  matchCustomTmEntries
+} = require('../asset/assetTmMatcher');
+const {
   createTemplateContext,
   renderTemplate,
   SYSTEM_PROMPT_FORBIDDEN_PLACEHOLDERS
@@ -32,6 +36,7 @@ function createEmptyAssetContext() {
     glossaryFingerprint: crypto.createHash('sha256').update('').digest('hex'),
     briefText: '',
     briefFingerprint: crypto.createHash('sha256').update('').digest('hex'),
+    customTmFingerprint: crypto.createHash('sha256').update('').digest('hex'),
     assetHints: [],
     tb: {
       entries: [],
@@ -39,6 +44,11 @@ function createEmptyAssetContext() {
       matcher: null,
       renderedText: '',
       languagePair: { source: '', target: '' }
+    },
+    customTm: {
+      entries: [],
+      fingerprint: crypto.createHash('sha256').update('[]').digest('hex'),
+      matcher: createCustomTmMatcher([])
     }
   };
 }
@@ -84,6 +94,38 @@ function buildSegmentTbContext({
   };
 }
 
+function buildSegmentCustomTmContext({
+  assetContext,
+  segment,
+  payload,
+  profile
+}) {
+  if (profile?.useCustomTm === false) {
+    return {
+      matches: [],
+      fingerprint: ''
+    };
+  }
+
+  const matches = matchCustomTmEntries({
+    matcher: assetContext?.customTm?.matcher || null,
+    segment,
+    sourceLanguage: payload?.sourceLanguage || '',
+    targetLanguage: payload?.targetLanguage || ''
+  });
+
+  return {
+    matches,
+    fingerprint: matches.map((match) => [
+      match.assetId,
+      match.sourceText,
+      match.targetText,
+      match.score,
+      match.bucket
+    ].join('|')).join('\n')
+  };
+}
+
 function buildTemplatePreflightContext({
   payload,
   profile,
@@ -108,8 +150,8 @@ function buildTemplatePreflightContext({
     glossaryText: hasSegmentGlossary ? (segment?.tbContext?.glossaryText || '') : (assetContext?.glossaryText || ''),
     tbMetadataText: hasSegmentTbMetadata ? (segment?.tbContext?.tbMetadataText || '') : (assetContext?.tbMetadataText || ''),
     briefText: assetContext?.briefText || '',
-    customTmSourceText: profile?.useCustomTm === false ? '' : (segment?.tmSource || ''),
-    customTmTargetText: profile?.useCustomTm === false ? '' : (segment?.tmTarget || ''),
+    customTmSourceText: profile?.useCustomTm === false ? '' : (segment?.customTmMatches?.[0]?.sourceText || segment?.tmSource || ''),
+    customTmTargetText: profile?.useCustomTm === false ? '' : (segment?.customTmMatches?.[0]?.targetText || segment?.tmTarget || ''),
     aboveText: profile?.usePreviewContext === false || profile?.usePreviewAboveBelow === false ? '' : (segmentPreview.above || ''),
     belowText: profile?.usePreviewContext === false || profile?.usePreviewAboveBelow === false ? '' : (segmentPreview.below || ''),
     aboveSourceText: profile?.usePreviewContext === false || profile?.usePreviewAboveBelow === false ? '' : (segmentPreview.aboveSourceText || ''),
@@ -165,6 +207,7 @@ function validateRuntimePromptTemplates({
 
 module.exports = {
   buildSegmentTbContext,
+  buildSegmentCustomTmContext,
   buildTemplatePreflightContext,
   createEmptyAssetContext,
   summarizeAssets,
