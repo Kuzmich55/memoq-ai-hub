@@ -155,6 +155,7 @@ export default function AssetsPage({
                     const usageProfiles = assetUsage.get(asset.id) || [];
                     return (
                       <List.Item
+                        className="asset-library-item"
                         actions={[
                           <Button key={`preview-${asset.id}`} type="text" icon={<EyeOutlined />} onClick={() => onPreviewAsset?.(asset.id)}>
                             {t('context.previewAsset')}

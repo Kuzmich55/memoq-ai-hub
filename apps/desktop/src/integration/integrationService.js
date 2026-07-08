@@ -139,6 +139,21 @@ function applyFsOperationWithAccessErrorMapping(operation, target) {
   }
 }
 
+function removeMarkOfTheWeb(filePath) {
+  if (process.platform !== 'win32' || !filePath) {
+    return;
+  }
+
+  try {
+    fs.rmSync(`${filePath}:Zone.Identifier`, { force: true });
+  } catch (error) {
+    if (error && (error.code === 'ENOENT' || error.code === 'EINVAL' || error.code === 'ENOTSUP')) {
+      return;
+    }
+    throw error;
+  }
+}
+
 function buildElevatedInstallScript(steps) {
   const lines = ['$ErrorActionPreference = "Stop"'];
   for (const step of steps) {
@@ -149,6 +164,9 @@ function buildElevatedInstallScript(steps) {
 
     lines.push(`New-Item -ItemType Directory -Force -Path '${String(path.dirname(step.target)).replace(/'/g, "''")}' | Out-Null`);
     lines.push(`Copy-Item -LiteralPath '${String(step.source).replace(/'/g, "''")}' -Destination '${String(step.target).replace(/'/g, "''")}' -Force`);
+    if (path.basename(step.target) === INTEGRATION.pluginDllName) {
+      lines.push(`Unblock-File -LiteralPath '${String(step.target).replace(/'/g, "''")}' -ErrorAction SilentlyContinue`);
+    }
   }
   return lines.join('; ');
 }
@@ -320,6 +338,9 @@ function installIntegration(paths, integrationConfig = {}) {
       applyFsOperationWithAccessErrorMapping(() => {
         fs.mkdirSync(path.dirname(step.target), { recursive: true });
         fs.copyFileSync(step.source, step.target);
+        if (path.basename(step.target) === INTEGRATION.pluginDllName) {
+          removeMarkOfTheWeb(step.target);
+        }
       }, step.target);
     });
   } catch (error) {
@@ -345,5 +366,7 @@ module.exports = {
   buildMemoQRootCandidates,
   buildDefaultMemoQInstallOptions,
   resolveIntegrationAssets,
-  resolveClientDevConfigTarget
+  resolveClientDevConfigTarget,
+  removeMarkOfTheWeb,
+  buildElevatedInstallScript
 };

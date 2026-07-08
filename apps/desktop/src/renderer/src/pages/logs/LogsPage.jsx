@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import { useI18n } from '../../i18n';
 
 const { Text } = Typography;
+const TABLE_SCROLL_X = 'max-content';
 
 function formatBytes(value) {
   const bytes = Number(value || 0);
@@ -65,7 +66,7 @@ export default function LogsPage({
         className="page-card logs-summary-card"
         title={t('logs.title')}
         extra={(
-          <Space wrap>
+          <Space wrap className="responsive-action-bar">
             <Button icon={<ReloadOutlined />} loading={loading} onClick={onRefresh}>
               {t('logs.refresh')}
             </Button>
@@ -108,6 +109,7 @@ export default function LogsPage({
         <Table
           rowKey="key"
           loading={loading}
+          scroll={{ x: TABLE_SCROLL_X }}
           dataSource={files}
           pagination={false}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('logs.noFiles')} /> }}

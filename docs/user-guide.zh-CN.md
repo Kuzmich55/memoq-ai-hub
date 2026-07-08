@@ -37,6 +37,7 @@ memoQ AI Hub 由两部分协同工作：
 ### 1.2 手动安装
 
 1. 从 GitHub Releases 下载最新发布包。
+   - 如果 Windows 在文件属性中显示“此文件来自其他计算机，可能被阻止”，请先在 zip 文件属性中点击 **解除锁定**，再解压。
 2. 解压后找到以下文件：
    - `MemoQ.AI.Hub.Plugin.dll`
    - `ClientDevConfig.xml`
@@ -47,6 +48,13 @@ C:\Program Files\memoQ\memoQ-11\Addins\
 ```
 
 4. 如 `ClientDevConfig.xml` 已存在，覆盖即可。
+5. 如果 memoQ 启动时报 `0x80131515` 或 “loadFromRemoteSources”，请在管理员 PowerShell 中运行：
+
+```powershell
+Unblock-File -LiteralPath "C:\Program Files\memoQ\memoQ-11\Addins\MemoQ.AI.Hub.Plugin.dll"
+```
+
+然后重启 memoQ。
 
 ## 第二步：配置 AI Provider
 

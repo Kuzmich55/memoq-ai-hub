@@ -32,6 +32,8 @@ import { useI18n } from '../../i18n';
 import { getProviderConnectionHelperText, isProviderConnectionTestDisabled } from '../../providerConnectionUx.mjs';
 
 const { Text, Title } = Typography;
+const TABLE_SCROLL_X = 'max-content';
+const MODEL_LIBRARY_MODAL_WIDTH = 'min(920px, calc(100vw - 32px))';
 
 function getProviderThroughputSummary(provider, t) {
   const capabilities = provider?.capabilities || {};
@@ -218,7 +220,7 @@ function ProviderHeader({
             {isDraftProvider(currentProvider) && <Tag>{t('providers.draft')}</Tag>}
           </Space>
         </div>
-        <Space wrap size={[10, 10]} className="provider-hero-actions">
+        <Space wrap size={[10, 10]} className="provider-hero-actions responsive-action-bar">
           <Button onClick={onDiscardProviderChanges}>{t('providers.discardChanges')}</Button>
           <Button danger onClick={onDeleteProvider}>{t('providers.deleteProvider')}</Button>
           <Button
@@ -258,7 +260,7 @@ function ProviderModelTable({
           <Text strong>{t('providers.modelsTitle')}</Text>
           <div><Text type="secondary">{t('providers.modelsHint')}</Text></div>
         </div>
-        <Space wrap size={[10, 10]}>
+        <Space wrap size={[10, 10]} className="responsive-action-bar">
           <Button icon={<PlusOutlined />} onClick={onOpenProviderModelManager}>{t('providers.addModel')}</Button>
           <Button
             danger
@@ -273,6 +275,7 @@ function ProviderModelTable({
       <Table
         rowKey="id"
         pagination={false}
+        scroll={{ x: TABLE_SCROLL_X }}
         dataSource={rows}
         rowClassName={(record) => (
           normalizedFocusedModelName && String(record.modelName || '').trim().toLowerCase() === normalizedFocusedModelName
@@ -349,7 +352,7 @@ function ProviderModelLibraryModal({
       open={providerModelManagerOpen}
       onCancel={onCloseProviderModelManager}
       footer={null}
-      width={920}
+      width={MODEL_LIBRARY_MODAL_WIDTH}
       destroyOnClose={false}
     >
       <Space direction="vertical" size={16} style={{ display: 'flex' }}>

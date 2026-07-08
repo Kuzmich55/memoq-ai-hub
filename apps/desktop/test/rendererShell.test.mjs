@@ -119,6 +119,27 @@ test('history records expose per-entry diagnostics and attempt timeline affordan
   assert.match(cssSource, /\.history-attempt-status-tag/);
 });
 
+test('history refreshes preserve loaded records outside the history page', () => {
+  const appSource = readRendererSource('App.jsx');
+
+  assert.match(appSource, /const includeHistoryExplorer = typeof options\.includeHistoryExplorer === 'boolean'/);
+  assert.match(appSource, /if \(!includeHistoryExplorer && current\?\.historyExplorer\)/);
+  assert.match(appSource, /historyExplorer: current\.historyExplorer/);
+  assert.match(appSource, /void refresh\(historyFilters, \{ includeHistoryExplorer: true \}\)/);
+  assert.match(appSource, /refresh\(historyFilters, \{ includeHistoryExplorer: true \}\)/);
+});
+
+test('provider refreshes preserve loaded history metrics outside the providers page', () => {
+  const appSource = readRendererSource('App.jsx');
+
+  assert.match(appSource, /function preserveProviderHistoryMetrics/);
+  assert.match(appSource, /successRate24h: provider\.successRate24h \?\? null/);
+  assert.match(appSource, /avgLatencyMs: provider\.avgLatencyMs \?\? null/);
+  assert.match(appSource, /if \(!includeProviderHistoryMetrics\)/);
+  assert.match(appSource, /preserveProviderHistoryMetrics\(nextData, current\)/);
+  assert.match(appSource, /void refresh\(\{\}, \{ includeProviderHistoryMetrics: true \}\)/);
+});
+
 test('provider page exposes history insight focus affordances', () => {
   const providerSource = readRendererSource('pages/providers/ProvidersPage.jsx');
   const cssSource = readRendererSource('index.css');
@@ -146,6 +167,61 @@ test('global select styles allow selected values and dropdown options to wrap', 
   assert.match(cssSource, /\.ant-select-single \.ant-select-selector \.ant-select-selection-item/);
   assert.match(cssSource, /overflow-wrap:\s*anywhere/);
   assert.match(cssSource, /white-space:\s*normal/);
+});
+
+test('dashboard and history use responsive grid and horizontal table scroll', () => {
+  const appSource = readRendererSource('App.jsx');
+
+  assert.match(appSource, /const TABLE_SCROLL_X = 'max-content';/);
+  assert.match(appSource, /const WIDE_SIDE_DRAWER_WIDTH = 'min\(920px, calc\(100vw - 32px\)\)';/);
+  assert.match(appSource, /<Col xs=\{24\} sm=\{12\} xl=\{6\} key=\{item\.key\}>/);
+  assert.match(appSource, /<Col xs=\{24\} xl=\{12\}>/);
+  assert.match(appSource, /<Col xs=\{24\} lg=\{12\}>/);
+  assert.match(appSource, /<Col xs=\{24\} sm=\{12\} lg=\{8\} xl=\{4\}>/);
+  assert.match(appSource, /scroll=\{\{ x: TABLE_SCROLL_X \}\}/);
+  assert.equal((appSource.match(/scroll=\{\{ x: TABLE_SCROLL_X \}\}/g) || []).length >= 3, true);
+  assert.equal((appSource.match(/width=\{WIDE_SIDE_DRAWER_WIDTH\}/g) || []).length >= 2, true);
+});
+
+test('feature pages keep tables and overlays responsive on narrow viewports', () => {
+  const builderSource = readRendererSource('pages/builder/BuilderPage.jsx');
+  const providersSource = readRendererSource('pages/providers/ProvidersPage.jsx');
+  const logsSource = readRendererSource('pages/logs/LogsPage.jsx');
+  const assetsSource = readRendererSource('pages/assets/AssetsPage.jsx');
+
+  assert.match(builderSource, /const PLACEHOLDER_DRAWER_WIDTH = 'min\(420px, calc\(100vw - 32px\)\)';/);
+  assert.match(builderSource, /width=\{PLACEHOLDER_DRAWER_WIDTH\}/);
+  assert.match(builderSource, /builder-sticky-actions-inner responsive-action-bar/);
+  assert.match(providersSource, /const TABLE_SCROLL_X = 'max-content';/);
+  assert.match(providersSource, /const MODEL_LIBRARY_MODAL_WIDTH = 'min\(920px, calc\(100vw - 32px\)\)';/);
+  assert.match(providersSource, /scroll=\{\{ x: TABLE_SCROLL_X \}\}/);
+  assert.match(providersSource, /width=\{MODEL_LIBRARY_MODAL_WIDTH\}/);
+  assert.match(logsSource, /const TABLE_SCROLL_X = 'max-content';/);
+  assert.match(logsSource, /scroll=\{\{ x: TABLE_SCROLL_X \}\}/);
+  assert.match(logsSource, /className="responsive-action-bar"/);
+  assert.match(assetsSource, /className="asset-library-item"/);
+});
+
+test('global responsive CSS covers wrapping, table overflow, shell header, and mobile sider', () => {
+  const appSource = readRendererSource('App.jsx');
+  const cssSource = readRendererSource('index.css');
+
+  assert.match(appSource, /className="app-header-bar"/);
+  assert.match(appSource, /className="app-header-controls"/);
+  assert.match(cssSource, /\*::before,\s*\n\*::after\s*\{/);
+  assert.match(cssSource, /\.ant-card-head-wrapper/);
+  assert.match(cssSource, /flex-wrap:\s*wrap/);
+  assert.match(cssSource, /\.ant-table-wrapper\s*\{/);
+  assert.match(cssSource, /overflow-x:\s*auto/);
+  assert.match(cssSource, /\.responsive-action-bar/);
+  assert.match(cssSource, /\.responsive-switch-line/);
+  assert.match(cssSource, /\.ant-drawer-content-wrapper/);
+  assert.match(cssSource, /max-width:\s*calc\(100vw - 32px\)/);
+  assert.match(cssSource, /@media \(max-width: 768px\)/);
+  assert.match(cssSource, /\.app-sider\s*\{/);
+  assert.match(cssSource, /width:\s*72px !important/);
+  assert.match(cssSource, /\.provider-model-manager-toolbar/);
+  assert.match(cssSource, /\.asset-library-item \.ant-list-item-action/);
 });
 
 test('buildDefaultPresetProfile enables advanced context toggles with source-first preview defaults', () => {

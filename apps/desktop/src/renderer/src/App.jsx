@@ -107,7 +107,8 @@ const DEFAULT_HISTORY_INSIGHTS = {
 };
 const CONNECTION_SENSITIVE_PROVIDER_FIELDS = new Set(['apiKey', 'baseUrl', 'requestPath', 'type']);
 const TEMPLATE_PLACEHOLDER_PATTERN = /{{\s*([a-z-]+)(!)?\s*}}/g;
-const WIDE_SIDE_DRAWER_WIDTH = '68vw';
+const WIDE_SIDE_DRAWER_WIDTH = 'min(920px, calc(100vw - 32px))';
+const TABLE_SCROLL_X = 'max-content';
 const TRANSLATION_STYLE_PRESETS = [
   {
     key: 'natural',
@@ -334,6 +335,38 @@ function normalizeAppStatePayload(data = {}) {
       ...(nextState.updateCenter || {})
     }
   };
+}
+
+function preserveProviderHistoryMetrics(remoteData, currentState) {
+  if (!remoteData?.providerHub || !currentState?.providerHub) {
+    return remoteData;
+  }
+
+  const metricsByProviderId = new Map((currentState.providerHub.providers || []).map((provider) => [
+    provider.id,
+    {
+      successRate24h: provider.successRate24h ?? null,
+      avgLatencyMs: provider.avgLatencyMs ?? null
+    }
+  ]));
+
+  return normalizeAppStatePayload({
+    ...remoteData,
+    providerHub: {
+      ...(remoteData.providerHub || {}),
+      providers: (remoteData.providerHub.providers || []).map((provider) => {
+        const metrics = metricsByProviderId.get(provider.id);
+        if (!metrics) {
+          return provider;
+        }
+        return {
+          ...provider,
+          successRate24h: metrics.successRate24h,
+          avgLatencyMs: metrics.avgLatencyMs
+        };
+      })
+    }
+  });
 }
 
 function createBlankProfile() {
@@ -1323,7 +1356,7 @@ function EditableProfileForm({
       className="page-card"
       title={t('context.profileEditor')}
       extra={(
-        <Space>
+        <Space wrap className="responsive-action-bar">
           <Button onClick={onDuplicate}>{t('common.duplicate')}</Button>
           <Button onClick={onDiscard}>{t('context.discardChanges')}</Button>
           <Button danger onClick={onDelete}>{t('context.deleteProfile')}</Button>
@@ -1332,11 +1365,11 @@ function EditableProfileForm({
       )}
     >
       <Space direction="vertical" size={18} style={{ display: 'flex' }}>
-        <Row gutter={16}>
-          <Col span={12}>
+        <Row gutter={[16, 16]}>
+          <Col xs={24} md={12}>
             <Input addonBefore={t('context.name')} value={profile?.name} onChange={(event) => onChange('name', event.target.value)} />
           </Col>
-          <Col span={12}>
+          <Col xs={24} md={12}>
             <Input addonBefore={t('context.description')} value={profile?.description} onChange={(event) => onChange('description', event.target.value)} />
           </Col>
         </Row>
@@ -1486,7 +1519,7 @@ function EditableProfileForm({
 
         <Row gutter={[16, 16]}>
           {toggleItems.map((item) => (
-            <Col span={12} key={item.field}>
+            <Col xs={24} md={12} key={item.field}>
               <div className="profile-toggle-card">
                 <div className="profile-toggle-head">
                   <Text strong>{item.label}</Text>
@@ -1500,17 +1533,17 @@ function EditableProfileForm({
         {profile?.usePreviewContext === true && profile?.usePreviewAboveBelow === true && (
           <>
             <Text type="secondary">{t('context.previewContextHint')}</Text>
-            <Row gutter={16}>
-              <Col span={6}><Input addonBefore={t('context.previewAboveSegments')} value={profile?.previewAboveSegments} onChange={(event) => onChange('previewAboveSegments', Number(event.target.value || 0))} /></Col>
-              <Col span={6}><Input addonBefore={t('context.previewAboveCharacters')} value={profile?.previewAboveCharacters} onChange={(event) => onChange('previewAboveCharacters', Number(event.target.value || 0))} /></Col>
-              <Col span={6}><Switch checked={profile?.previewAboveIncludeSource === true} onChange={(checked) => onChange('previewAboveIncludeSource', checked)} /> <Text style={{ marginLeft: 8 }}>{t('context.previewAboveIncludeSource')}</Text></Col>
-              <Col span={6}><Switch checked={profile?.previewAboveIncludeTarget !== false} onChange={(checked) => onChange('previewAboveIncludeTarget', checked)} /> <Text style={{ marginLeft: 8 }}>{t('context.previewAboveIncludeTarget')}</Text></Col>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12} xl={6}><Input addonBefore={t('context.previewAboveSegments')} value={profile?.previewAboveSegments} onChange={(event) => onChange('previewAboveSegments', Number(event.target.value || 0))} /></Col>
+              <Col xs={24} md={12} xl={6}><Input addonBefore={t('context.previewAboveCharacters')} value={profile?.previewAboveCharacters} onChange={(event) => onChange('previewAboveCharacters', Number(event.target.value || 0))} /></Col>
+              <Col xs={24} md={12} xl={6}><div className="responsive-switch-line"><Switch checked={profile?.previewAboveIncludeSource === true} onChange={(checked) => onChange('previewAboveIncludeSource', checked)} /> <Text>{t('context.previewAboveIncludeSource')}</Text></div></Col>
+              <Col xs={24} md={12} xl={6}><div className="responsive-switch-line"><Switch checked={profile?.previewAboveIncludeTarget !== false} onChange={(checked) => onChange('previewAboveIncludeTarget', checked)} /> <Text>{t('context.previewAboveIncludeTarget')}</Text></div></Col>
             </Row>
-            <Row gutter={16}>
-              <Col span={6}><Input addonBefore={t('context.previewBelowSegments')} value={profile?.previewBelowSegments} onChange={(event) => onChange('previewBelowSegments', Number(event.target.value || 0))} /></Col>
-              <Col span={6}><Input addonBefore={t('context.previewBelowCharacters')} value={profile?.previewBelowCharacters} onChange={(event) => onChange('previewBelowCharacters', Number(event.target.value || 0))} /></Col>
-              <Col span={6}><Switch checked={profile?.previewBelowIncludeSource === true} onChange={(checked) => onChange('previewBelowIncludeSource', checked)} /> <Text style={{ marginLeft: 8 }}>{t('context.previewBelowIncludeSource')}</Text></Col>
-              <Col span={6}><Switch checked={profile?.previewBelowIncludeTarget !== false} onChange={(checked) => onChange('previewBelowIncludeTarget', checked)} /> <Text style={{ marginLeft: 8 }}>{t('context.previewBelowIncludeTarget')}</Text></Col>
+            <Row gutter={[16, 16]}>
+              <Col xs={24} md={12} xl={6}><Input addonBefore={t('context.previewBelowSegments')} value={profile?.previewBelowSegments} onChange={(event) => onChange('previewBelowSegments', Number(event.target.value || 0))} /></Col>
+              <Col xs={24} md={12} xl={6}><Input addonBefore={t('context.previewBelowCharacters')} value={profile?.previewBelowCharacters} onChange={(event) => onChange('previewBelowCharacters', Number(event.target.value || 0))} /></Col>
+              <Col xs={24} md={12} xl={6}><div className="responsive-switch-line"><Switch checked={profile?.previewBelowIncludeSource === true} onChange={(checked) => onChange('previewBelowIncludeSource', checked)} /> <Text>{t('context.previewBelowIncludeSource')}</Text></div></Col>
+              <Col xs={24} md={12} xl={6}><div className="responsive-switch-line"><Switch checked={profile?.previewBelowIncludeTarget !== false} onChange={(checked) => onChange('previewBelowIncludeTarget', checked)} /> <Text>{t('context.previewBelowIncludeTarget')}</Text></div></Col>
             </Row>
           </>
         )}
@@ -1591,17 +1624,23 @@ export default function App() {
     message.error(text);
   }
 
-  async function refresh(filters = {}) {
+  async function refresh(filters = {}, options = {}) {
     try {
       setError('');
       if (!api?.getAppState) {
         throw new Error('Desktop bridge is not available yet.');
       }
 
+      const includeHistoryExplorer = typeof options.includeHistoryExplorer === 'boolean'
+        ? options.includeHistoryExplorer
+        : activePage === 'history';
+      const includeProviderHistoryMetrics = typeof options.includeProviderHistoryMetrics === 'boolean'
+        ? options.includeProviderHistoryMetrics
+        : activePage === 'providers';
       const requestFilters = {
         ...(filters || {}),
-        includeHistoryExplorer: activePage === 'history',
-        includeProviderHistoryMetrics: activePage === 'providers'
+        includeHistoryExplorer,
+        includeProviderHistoryMetrics
       };
       const remoteData = normalizeAppStatePayload(await api.getAppState(requestFilters));
       const providerRebase = rebaseDraftEntries(providerDraftsRef.current, remoteData?.providerHub?.providers || [], buildProviderFingerprint);
@@ -1609,7 +1648,19 @@ export default function App() {
 
       setProviderDraftsById(providerRebase.draftsById);
       setProfileDraftsById(profileRebase.draftsById);
-      setState(remoteData);
+      setState((current) => {
+        let nextData = remoteData;
+        if (!includeProviderHistoryMetrics) {
+          nextData = preserveProviderHistoryMetrics(nextData, current);
+        }
+        if (!includeHistoryExplorer && current?.historyExplorer) {
+          nextData = normalizeAppStatePayload({
+            ...nextData,
+            historyExplorer: current.historyExplorer
+          });
+        }
+        return nextData;
+      });
 
       const resolvedProviders = getResolvedRecords(remoteData?.providerHub?.providers || [], providerRebase.draftsById);
       const resolvedProfiles = getResolvedRecords(remoteData?.contextBuilder?.profiles || [], profileRebase.draftsById);
@@ -1620,8 +1671,10 @@ export default function App() {
         remoteData?.contextBuilder?.defaultProfileId || ''
       ));
       setProviderId((current) => resolvedProviders.some((item) => item.id === current) ? current : (resolvedProviders[0]?.id || ''));
-      setSelectedHistoryIds((current) => current.filter((entryId) => remoteData?.historyExplorer?.items?.some((item) => item.id === entryId)));
-      setSelectedHistoryId((current) => remoteData?.historyExplorer?.items?.some((item) => item.id === current) ? current : '');
+      if (includeHistoryExplorer) {
+        setSelectedHistoryIds((current) => current.filter((entryId) => remoteData?.historyExplorer?.items?.some((item) => item.id === entryId)));
+        setSelectedHistoryId((current) => remoteData?.historyExplorer?.items?.some((item) => item.id === current) ? current : '');
+      }
 
       if (providerRebase.removedIds.length) {
         setProviderTestStatesById((current) => {
@@ -1749,8 +1802,14 @@ export default function App() {
   }, [activePage]);
 
   useEffect(() => {
+    if (activePage === 'providers') {
+      void refresh({}, { includeProviderHistoryMetrics: true });
+    }
+  }, [activePage]);
+
+  useEffect(() => {
     if (activePage === 'history') {
-      void refresh(historyFilters);
+      void refresh(historyFilters, { includeHistoryExplorer: true });
     }
   }, [activePage]);
 
@@ -2528,7 +2587,7 @@ export default function App() {
     setHistoryFilters(historyFilterDraft);
     setSelectedHistoryIds([]);
     setSelectedHistoryId('');
-    await refresh(historyFilterDraft);
+    await refresh(historyFilterDraft, { includeHistoryExplorer: true });
   }
 
   function updateHistoryFilterDraftField(field, value) {
@@ -2549,7 +2608,7 @@ export default function App() {
     setHistoryFilters(nextFilters);
     setSelectedHistoryIds([]);
     setSelectedHistoryId('');
-    await refresh(nextFilters);
+    await refresh(nextFilters, { includeHistoryExplorer: true });
   }
 
   function openInsightProvider(providerEntryId = '', focus = {}) {
@@ -2582,7 +2641,7 @@ export default function App() {
     setHistoryFilters(emptyFilters);
     setSelectedHistoryIds([]);
     setSelectedHistoryId('');
-    await refresh(emptyFilters);
+    await refresh(emptyFilters, { includeHistoryExplorer: true });
   }
 
   function updateCurrentProviderDraft(updater, options = {}) {
@@ -2808,7 +2867,7 @@ export default function App() {
       setSelectedHistoryIds((current) => current.filter((entryId) => !normalizedEntryIds.includes(entryId)));
       setSelectedHistoryId((current) => (normalizedEntryIds.includes(current) ? '' : current));
       message.success(t('history.deleteSuccess', { count: Number(result?.deletedCount || normalizedEntryIds.length) }));
-      await refresh(historyFilters);
+      await refresh(historyFilters, { includeHistoryExplorer: true });
     } catch (deleteError) {
       notifyError(deleteError);
     }
@@ -2994,11 +3053,11 @@ export default function App() {
       </Sider>
       <Layout>
         <Header className="app-header" style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e5e5e5' }}>
-          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-            <Space>
+          <Space className="app-header-bar" style={{ width: '100%', justifyContent: 'space-between' }}>
+            <Space className="app-header-title">
               <Title level={3} style={{ margin: 0 }}>{t('app.title')}</Title>
             </Space>
-            <Space>
+            <Space wrap className="app-header-controls">
               <Select
                 size="small"
                 style={{ width: 110 }}
@@ -3026,9 +3085,9 @@ export default function App() {
 
           {activePage === 'dashboard' && (
             <Space direction="vertical" size={18} style={{ display: 'flex' }}>
-              <Row gutter={16}>
+              <Row gutter={[16, 16]}>
                 {state.dashboard.checklist.map((item) => (
-                  <Col span={6} key={item.key}>
+                  <Col xs={24} sm={12} xl={6} key={item.key}>
                     <Card className="page-card">
                       <Statistic title={item.title} value={item.subtitle} valueStyle={{ fontSize: 18 }} />
                       <Button type="link" style={{ paddingInline: 0 }} onClick={() => handleChecklistAction(item.key)}>{item.actionLabel}</Button>
@@ -3036,22 +3095,22 @@ export default function App() {
                   </Col>
                 ))}
               </Row>
-              <Row gutter={16}>
-                <Col span={12}>
+              <Row gutter={[16, 16]}>
+                <Col xs={24} xl={12}>
                   <Card className="page-card" title={t('dashboard.runtimeStatus')}>
-                    <Descriptions column={1}>
+                    <Descriptions column={1} className="wrap-descriptions">
                       <Descriptions.Item label={t('dashboard.memoqPath')}><HoverText value={state.dashboard.runtimeStatus.memoqInstallPath} /></Descriptions.Item>
                       <Descriptions.Item label={t('dashboard.pluginStatus')}><HoverText value={state.dashboard.runtimeStatus.pluginStatus} /></Descriptions.Item>
                       <Descriptions.Item label={t('dashboard.connectionStatus')}><HoverText value={connectionStatusLabel} /></Descriptions.Item>
                       <Descriptions.Item label={t('dashboard.previewStatus')}><HoverText value={previewBridgeStatusLabel} /></Descriptions.Item>
                       <Descriptions.Item label={t('dashboard.previewLastError')}><HoverText value={previewBridgeStatus.lastError} /></Descriptions.Item>
                     </Descriptions>
-                    <Space style={{ marginTop: 16 }}>
+                    <Space wrap className="responsive-action-bar" style={{ marginTop: 16 }}>
                       <Button loading={handshaking} onClick={testHandshake} disabled={state?.startup?.status !== 'ready'}>{t('dashboard.testConnection')}</Button>
                     </Space>
                   </Card>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} xl={12}>
                   <Card className="page-card" title={t('dashboard.installConfig')}>
                     <Space direction="vertical" size={16} style={{ display: 'flex' }}>
                       <Alert type="info" showIcon message={t('dashboard.installDialogHint')} />
@@ -3061,8 +3120,8 @@ export default function App() {
                         message={t('dashboard.memoqParallelismNoticeTitle')}
                         description={t('dashboard.memoqParallelismNotice')}
                       />
-                      <Row gutter={12}>
-                        <Col span={12}>
+                      <Row gutter={[12, 12]}>
+                        <Col xs={24} md={12}>
                           <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                             <Text strong>{t('dashboard.installMemoqVersion')}</Text>
                             <Select
@@ -3082,7 +3141,7 @@ export default function App() {
                             />
                           </Space>
                         </Col>
-                        <Col span={12}>
+                        <Col xs={24} md={12}>
                           <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                             <Text strong>{t('dashboard.installMode')}</Text>
                             <Radio.Group
@@ -3126,7 +3185,7 @@ export default function App() {
                           <Text type="secondary">{t('dashboard.installCustomHint')}</Text>
                         </Space>
                       )}
-                      <Space>
+                      <Space wrap className="responsive-action-bar">
                         <Button loading={installing} type="primary" icon={<DeploymentUnitOutlined />} onClick={confirmInstallIntegration}>
                           {t('dashboard.installReinstall')}
                         </Button>
@@ -3388,8 +3447,8 @@ export default function App() {
                       <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('history.insights.empty')} />
                     )}
                   </div>
-                  <Row gutter={12}>
-                    <Col span={12}>
+                  <Row gutter={[12, 12]}>
+                    <Col xs={24} lg={12}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.search')}</Text>
                         <Input.Search
@@ -3401,7 +3460,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={6}>
+                    <Col xs={24} sm={12} lg={6}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.providerFilter')}</Text>
                         <Select
@@ -3414,7 +3473,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={6}>
+                    <Col xs={24} sm={12} lg={6}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.modelFilter')}</Text>
                         <Select
@@ -3428,8 +3487,8 @@ export default function App() {
                       </Space>
                     </Col>
                   </Row>
-                  <Row gutter={12}>
-                    <Col span={4}>
+                  <Row gutter={[12, 12]}>
+                    <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.projectIdFilter')}</Text>
                         <Input
@@ -3440,7 +3499,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.subjectFilter')}</Text>
                         <Input
@@ -3451,7 +3510,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.statusFilter')}</Text>
                         <Select
@@ -3466,7 +3525,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.issueFilter')}</Text>
                         <Select
@@ -3481,7 +3540,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.dateFrom')}</Text>
                         <Input
@@ -3492,7 +3551,7 @@ export default function App() {
                         />
                       </Space>
                     </Col>
-                    <Col span={4}>
+                    <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                         <Text strong>{t('history.dateTo')}</Text>
                         <Input
@@ -3504,14 +3563,15 @@ export default function App() {
                       </Space>
                     </Col>
                   </Row>
-                  <Space>
+                  <Space wrap className="responsive-action-bar">
                     <Button type="primary" onClick={applyHistoryFilters}>{t('history.applyFilters')}</Button>
                     <Button onClick={resetHistoryFilters}>{t('history.resetFilters')}</Button>
-                    <Button onClick={() => refresh(historyFilters)}>{t('app.refresh')}</Button>
+                    <Button onClick={() => refresh(historyFilters, { includeHistoryExplorer: true })}>{t('app.refresh')}</Button>
                   </Space>
                 </Space>
                 <Table
                   rowKey="id"
+                  scroll={{ x: TABLE_SCROLL_X }}
                   rowSelection={{ selectedRowKeys: selectedHistoryIds, onChange: setSelectedHistoryIds }}
                   dataSource={visibleHistoryItems}
                   onRow={(record) => ({
@@ -3644,6 +3704,7 @@ export default function App() {
               <Table
                 size="small"
                 pagination={false}
+                scroll={{ x: TABLE_SCROLL_X }}
                 rowKey="key"
                 dataSource={buildHistoryAttemptRows(currentHistoryRecord)}
                 locale={{ emptyText: t('history.noAttempts') }}
@@ -3978,6 +4039,7 @@ export default function App() {
               <Table
                 size="small"
                 pagination={false}
+                scroll={{ x: TABLE_SCROLL_X }}
                 dataSource={buildAssetPreviewRows(assetPreviewData)}
                 columns={(assetPreviewData.columns || Object.keys(assetPreviewData.rows[0] || {})).map((columnKey) => ({
                   title: t(`context.assetPreviewColumn.${columnKey}`),

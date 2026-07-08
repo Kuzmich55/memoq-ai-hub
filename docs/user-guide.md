@@ -37,6 +37,7 @@ The installer writes these files into memoQ's `Addins` directory:
 ### 1.2 Manual Install
 
 1. Download the latest release package from GitHub Releases.
+   - If Windows file properties show that the file came from another computer and might be blocked, click **Unblock** on the zip file before extracting it.
 2. Extract it and locate:
    - `MemoQ.AI.Hub.Plugin.dll`
    - `ClientDevConfig.xml`
@@ -47,6 +48,13 @@ C:\Program Files\memoQ\memoQ-11\Addins\
 ```
 
 4. Overwrite `ClientDevConfig.xml` if it already exists.
+5. If memoQ reports `0x80131515` or `loadFromRemoteSources` on startup, run this from an elevated PowerShell prompt:
+
+```powershell
+Unblock-File -LiteralPath "C:\Program Files\memoQ\memoQ-11\Addins\MemoQ.AI.Hub.Plugin.dll"
+```
+
+Then restart memoQ.
 
 ## Step 2: Configure an AI Provider
 

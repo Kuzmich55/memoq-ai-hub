@@ -33,6 +33,7 @@ const {
   resolveIntegrationAssets,
   installIntegration,
   resolveClientDevConfigTarget,
+  buildElevatedInstallScript,
   IntegrationError
 } = loadIntegrationService();
 
@@ -160,6 +161,25 @@ test('installIntegration removes stale legacy dll and installs the new dll name'
     fs.rmSync(tempResourcesRoot, { recursive: true, force: true });
     fs.rmSync(tempProgramData, { recursive: true, force: true });
   }
+});
+
+test('elevated install script unblocks the copied plugin dll', () => {
+  const script = buildElevatedInstallScript([
+    {
+      action: 'copy',
+      source: 'C:\\Downloads\\MemoQ.AI.Hub.Plugin.dll',
+      target: 'C:\\Program Files\\memoQ\\memoQ-12\\Addins\\MemoQ.AI.Hub.Plugin.dll'
+    },
+    {
+      action: 'copy',
+      source: 'C:\\Downloads\\ClientDevConfig.xml',
+      target: 'C:\\ProgramData\\MemoQ\\ClientDevConfig.xml'
+    }
+  ]);
+
+  assert.match(script, /Copy-Item.+MemoQ\.AI\.Hub\.Plugin\.dll/);
+  assert.match(script, /Unblock-File.+MemoQ\.AI\.Hub\.Plugin\.dll/);
+  assert.equal(script.match(/Unblock-File/g)?.length, 1);
 });
 
 test('getIntegrationStatus preserves selected install dir', () => {

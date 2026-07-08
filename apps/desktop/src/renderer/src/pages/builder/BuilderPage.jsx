@@ -28,6 +28,7 @@ import {
 import { CollapsibleItemList, CollapsibleSidePanel, ProfileListRow } from '../../components/CollapsibleSidePanel';
 
 const { Paragraph, Text } = Typography;
+const PLACEHOLDER_DRAWER_WIDTH = 'min(420px, calc(100vw - 32px))';
 
 const STYLE_PRESETS = [
   {
@@ -353,7 +354,7 @@ function PlaceholderDrawer({ open, targetField, supportedPlaceholders, onClose, 
     <Drawer
       title={t('context.placeholderPanelTitle')}
       placement="right"
-      width={420}
+      width={PLACEHOLDER_DRAWER_WIDTH}
       open={open}
       onClose={onClose}
     >
@@ -427,7 +428,7 @@ function BuilderEditor({
         className="page-card"
         title={t('context.profileEditor')}
         extra={(
-          <Space wrap>
+          <Space wrap className="responsive-action-bar">
             <Button icon={<StarOutlined />} onClick={onSetDefault} disabled={isDefaultProfile}>
               {t('context.setAsDefaultProfile')}
             </Button>
@@ -568,7 +569,7 @@ function BuilderEditor({
                           <Card size="small" className="builder-subcard" title={t('context.cacheMaintenanceTitle')}>
                             <Space direction="vertical" size={10} style={{ display: 'flex' }}>
                               <Text type="secondary">{t('context.cacheMaintenanceHint')}</Text>
-                              <Space wrap>
+                              <Space wrap className="responsive-action-bar">
                                 <Button
                                   onClick={onBypassTranslationCacheOnce}
                                   disabled={translationCacheBypassPending === true}
@@ -642,7 +643,7 @@ function BuilderEditor({
           </div>
 
           <div className="builder-sticky-actions" data-testid="builder-sticky-actions">
-            <Space wrap size={[10, 10]} className="builder-sticky-actions-inner">
+            <Space wrap size={[10, 10]} className="builder-sticky-actions-inner responsive-action-bar">
               <Button onClick={onDiscard}>{t('context.discardChanges')}</Button>
               <Button type="primary" icon={<SaveOutlined />} onClick={onSave}>{t('context.saveProfile')}</Button>
             </Space>
