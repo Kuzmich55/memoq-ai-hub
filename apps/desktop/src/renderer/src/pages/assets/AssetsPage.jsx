@@ -24,7 +24,8 @@ const { Text } = Typography;
 
 const ASSET_CATEGORIES = [
   { id: 'all', assetType: '', translationKey: 'context.assetCategoryAll' },
-  { id: 'glossary', assetType: 'glossary', translationKey: 'context.assetType.glossary' }
+  { id: 'glossary', assetType: 'glossary', translationKey: 'context.assetType.glossary' },
+  { id: 'custom_tm', assetType: 'custom_tm', translationKey: 'context.assetType.custom_tm' }
 ];
 
 function AssetCategoryPanel({
@@ -40,7 +41,8 @@ function AssetCategoryPanel({
   const { t } = useI18n();
   const addAssetMenu = {
     items: [
-      { key: 'glossary', label: t('context.uploadGlossary') }
+      { key: 'glossary', label: t('context.uploadGlossary') },
+      { key: 'custom_tm', label: t('context.uploadCustomTm') }
     ],
     onClick: ({ key }) => onImportAsset?.(key)
   };
@@ -140,7 +142,7 @@ export default function AssetsPage({
               <Text type="secondary">
                 {t('context.assetAllowedExtensions', {
                   glossary: (assetImportRules?.glossary?.extensions || []).join(', '),
-                  customTm: '',
+                  customTm: (assetImportRules?.customTm?.extensions || []).join(', '),
                   brief: ''
                 })}
               </Text>

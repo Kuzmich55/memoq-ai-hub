@@ -55,6 +55,8 @@ test('Chinese locale is independent and matches English locale keys', () => {
     collectLocaleKeys(en).sort()
   );
   assert.equal(zhCN.nav.logs, '日志');
+  assert.equal(en.nav.assets, 'Assets');
+  assert.equal(zhCN.nav.assets, '资产');
   assert.equal(zhCN.providers.title, 'AI 服务');
   assert.equal(en.nav.providers, 'AI Services');
   assert.equal(en.history.insights.title, 'History insights');
@@ -200,6 +202,9 @@ test('feature pages keep tables and overlays responsive on narrow viewports', ()
   assert.match(logsSource, /scroll=\{\{ x: TABLE_SCROLL_X \}\}/);
   assert.match(logsSource, /className="responsive-action-bar"/);
   assert.match(assetsSource, /className="asset-library-item"/);
+  assert.match(assetsSource, /id: 'custom_tm'/);
+  assert.match(assetsSource, /key: 'custom_tm', label: t\('context\.uploadCustomTm'\)/);
+  assert.match(assetsSource, /customTm: \(assetImportRules\?\.customTm\?\.extensions \|\| \[\]\)\.join\(', '\)/);
 });
 
 test('global responsive CSS covers wrapping, table overflow, shell header, and mobile sider', () => {
