@@ -28,11 +28,11 @@ The repository contains runtime code for more advanced capabilities, but not eve
 
 ## Recent Updates
 
-`v1.0.21` makes uploaded TM/TMX easier to find from the main Assets page:
+`v1.0.20` adds uploaded TM/TMX matching and makes the upload entry visible from the main Assets page:
 
-- The left navigation now uses the broader Assets label instead of Term Libraries.
-- The Assets page add menu includes Custom TM upload, and the sidebar includes a Custom TM category.
-- The allowed extensions copy now shows both glossary/TB formats and Custom TM formats including `.tmx`.
+- Custom TM assets can include TMX files, including memoQ-exported UTF-16 TMX with neighbor context metadata.
+- The desktop runtime calculates an explainable `AI Hub TM score` and memoQ-style buckets (`101%`, `100%`, `95-99`, `85-94`, `75-84`, `<75`).
+- The Assets page add menu includes Custom TM upload, and uploaded TM matches are recorded in translation history for diagnostics.
 
 ## Runtime Layout
 
