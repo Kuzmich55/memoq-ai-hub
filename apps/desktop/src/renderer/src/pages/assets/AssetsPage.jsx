@@ -113,7 +113,7 @@ export default function AssetsPage({
   const { t } = useI18n();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [assetCategoryId, setAssetCategoryId] = useState('all');
-  const assetUsage = buildAssetUsageMap(profileItems, t('providers.notAvailable'));
+  const assetUsage = buildAssetUsageMap(profileItems, t('context.unnamedProfile'));
   const visibleAssets = useMemo(() => (
     assetCategoryId === 'all'
       ? assets
@@ -180,7 +180,7 @@ export default function AssetsPage({
                               ))}
                             </Space>
                           ) : (
-                            <Text type="secondary">{t('providers.notAvailable')}</Text>
+                            <Text type="secondary">{t('context.assetNotAttached')}</Text>
                           )}
                         </Space>
                       </List.Item>

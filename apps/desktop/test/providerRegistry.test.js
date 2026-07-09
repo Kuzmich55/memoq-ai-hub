@@ -383,6 +383,13 @@ test('provider registry renders glossary, brief, and custom TM placeholders', as
       sourceText: 'Install now',
       tmSource: 'Install now',
       tmTarget: 'Installez maintenant',
+      customTmMatches: [{
+        sourceText: 'Install now',
+        targetText: 'Installez maintenant uploaded',
+        score: 100,
+        bucket: '100%',
+        scoreType: 'AI Hub TM score'
+      }],
       metadata: {},
       previewContext: { summary: 'Install flow.' },
       profile: {
@@ -403,7 +410,8 @@ test('provider registry renders glossary, brief, and custom TM placeholders', as
   assert.match(calls.responses[0].request.input, /TB language pair: EN -> FR/);
   assert.match(calls.responses[0].request.input, /Entry domain: Setup/);
   assert.match(calls.responses[0].request.input, /Use imperative voice\./);
-  assert.match(calls.responses[0].request.input, /Custom=Installez maintenant/);
+  assert.match(calls.responses[0].request.input, /Custom=Installez maintenant uploaded/);
+  assert.doesNotMatch(calls.responses[0].request.input, /Custom=Installez maintenant"/);
 });
 
 test('provider registry renders per-segment TB instructions in batch mode', async () => {
@@ -820,14 +828,29 @@ test('provider registry renders custom TM placeholders in batch mode', async () 
       requestType: 'Plaintext',
       metadata: {},
       segments: [
-        { index: 0, sourceText: 'Hello', tmSource: 'Hello', tmTarget: 'Hallo', segmentMetadata: { segmentIndex: 0 } },
-        { index: 1, sourceText: 'World', tmSource: 'World', tmTarget: 'Welt', segmentMetadata: { segmentIndex: 1 } }
+        {
+          index: 0,
+          sourceText: 'Hello',
+          tmSource: 'Hello',
+          tmTarget: 'Hallo',
+          customTmMatches: [{ sourceText: 'Hello uploaded', targetText: 'Hallo uploaded', score: 100, bucket: '100%' }],
+          segmentMetadata: { segmentIndex: 0 }
+        },
+        {
+          index: 1,
+          sourceText: 'World',
+          tmSource: 'World',
+          tmTarget: 'Welt',
+          customTmMatches: [{ sourceText: 'World uploaded', targetText: 'Welt uploaded', score: 95, bucket: '95-99' }],
+          segmentMetadata: { segmentIndex: 1 }
+        }
       ]
     });
   });
 
-  assert.match(calls.responses[0].request.input, /"profileInstructions": "Custom=Hello => Hallo"/);
-  assert.match(calls.responses[0].request.input, /"profileInstructions": "Custom=World => Welt"/);
+  assert.match(calls.responses[0].request.input, /"profileInstructions": "Custom=Hello uploaded => Hallo uploaded"/);
+  assert.match(calls.responses[0].request.input, /"profileInstructions": "Custom=World uploaded => Welt uploaded"/);
+  assert.doesNotMatch(calls.responses[0].request.input, /"profileInstructions": "Custom=Hello => Hallo"/);
 });
 
 test('provider registry hoists identical batch profile instructions into shared instructions', async () => {

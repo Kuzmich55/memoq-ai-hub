@@ -30,6 +30,7 @@ const {
 } = require('./assetTbStructure');
 
 const MAX_GLOSSARY_ROWS = 1000;
+const MAX_CUSTOM_TM_ENTRIES = 50000;
 const MAX_GLOSSARY_CHARACTERS = 12000;
 const SMART_PARSING_UPGRADE_HINT = 'Configure an AI provider and model to enable smart glossary column recognition.';
 const TABLE_FALLBACK_INDEXES = {
@@ -496,7 +497,15 @@ function readXmlParser() {
     ignoreAttributes: false,
     attributeNamePrefix: '@_',
     removeNSPrefix: true,
-    trimValues: true
+    trimValues: true,
+    processEntities: {
+      enabled: true,
+      maxEntitySize: 10000,
+      maxExpansionDepth: 10,
+      maxTotalExpansions: 250000,
+      maxExpandedLength: 10000000,
+      maxEntityCount: 100
+    }
   });
 }
 
@@ -636,7 +645,7 @@ function parseTmxEntries(text, asset = {}) {
     }
   }
 
-  return entries.slice(0, MAX_GLOSSARY_ROWS);
+  return entries.slice(0, MAX_CUSTOM_TM_ENTRIES);
 }
 
 function parseTbxGlossary(text) {
@@ -855,7 +864,7 @@ function parseCustomTmAsset(asset, options = {}) {
       targetLang: entry.targetLang || entry.tgtLang
     }, index, asset))
     .filter(Boolean)
-    .slice(0, MAX_GLOSSARY_ROWS);
+    .slice(0, MAX_CUSTOM_TM_ENTRIES);
 
   return {
     text: '',

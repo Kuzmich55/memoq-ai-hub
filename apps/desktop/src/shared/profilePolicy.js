@@ -1,4 +1,7 @@
 const { listTemplatePlaceholders } = require('./promptTemplate');
+const {
+  normalizeCustomTmMatchBuckets
+} = require('../asset/assetTmMatcher');
 
 const FIRST_RELEASE_FIXED_PROFILE_FIELDS = Object.freeze({});
 
@@ -35,7 +38,8 @@ function applyFirstReleaseProfilePolicy(profile = {}) {
   return {
     ...profile,
     assetBindings: normalizeAssetBindings(profile.assetBindings),
-    assetSelections: normalizeAssetSelections(profile.assetSelections)
+    assetSelections: normalizeAssetSelections(profile.assetSelections),
+    customTmMatchBuckets: normalizeCustomTmMatchBuckets(profile.customTmMatchBuckets)
   };
 }
 

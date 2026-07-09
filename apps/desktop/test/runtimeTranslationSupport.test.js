@@ -80,6 +80,16 @@ test('runtimeTranslationSupport generates stable cache keys for equivalent paylo
   };
 
   assert.equal(createTranslationCacheKey(sharedInput), createTranslationCacheKey(sharedInput));
+  assert.notEqual(
+    createTranslationCacheKey({
+      ...sharedInput,
+      profile: { ...sharedInput.profile, customTmMatchBuckets: ['100%'] }
+    }),
+    createTranslationCacheKey({
+      ...sharedInput,
+      profile: { ...sharedInput.profile, customTmMatchBuckets: ['95-99'] }
+    })
+  );
   assert.equal(
     createAdaptiveTranslationCacheKey({
       sourceLanguage: 'EN',

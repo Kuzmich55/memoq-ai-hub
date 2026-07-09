@@ -194,6 +194,11 @@ test('feature pages keep tables and overlays responsive on narrow viewports', ()
   assert.match(builderSource, /const PLACEHOLDER_DRAWER_WIDTH = 'min\(420px, calc\(100vw - 32px\)\)';/);
   assert.match(builderSource, /width=\{PLACEHOLDER_DRAWER_WIDTH\}/);
   assert.match(builderSource, /builder-sticky-actions-inner responsive-action-bar/);
+  assert.match(builderSource, /type: 'custom_tm'/);
+  assert.match(builderSource, /titleKey: 'context\.assetRoleTmTitle'/);
+  assert.match(builderSource, /fieldName: 'customTmAssetId'/);
+  assert.match(builderSource, /mode="multiple"/);
+  assert.match(builderSource, /onProfileChange\('customTmMatchBuckets', value\)/);
   assert.match(providersSource, /const TABLE_SCROLL_X = 'max-content';/);
   assert.match(providersSource, /const MODEL_LIBRARY_MODAL_WIDTH = 'min\(920px, calc\(100vw - 32px\)\)';/);
   assert.match(providersSource, /scroll=\{\{ x: TABLE_SCROLL_X \}\}/);
@@ -205,6 +210,18 @@ test('feature pages keep tables and overlays responsive on narrow viewports', ()
   assert.match(assetsSource, /id: 'custom_tm'/);
   assert.match(assetsSource, /key: 'custom_tm', label: t\('context\.uploadCustomTm'\)/);
   assert.match(assetsSource, /customTm: \(assetImportRules\?\.customTm\?\.extensions \|\| \[\]\)\.join\(', '\)/);
+  assert.match(assetsSource, /t\('context\.assetNotAttached'\)/);
+  assert.doesNotMatch(assetsSource, /t\('providers\.notAvailable'\)/);
+});
+
+test('setup asset selections include custom TM bindings', () => {
+  const appSource = readRendererSource('App.jsx');
+  const builderSource = readRendererSource('pages/builder/BuilderPage.jsx');
+
+  assert.match(builderSource, /\[item\.fieldName\]: String\(currentSelections\[item\.fieldName\] \|\| ''\)/);
+  assert.match(appSource, /purpose === 'custom_tm' && !nextSelections\.customTmAssetId/);
+  assert.match(appSource, /const customTmAssetId = String\(assetSelections\?\.customTmAssetId \|\| ''\)\.trim\(\);/);
+  assert.match(appSource, /nextBindings\.push\(\{ assetId: customTmAssetId, purpose: 'custom_tm' \}\);/);
 });
 
 test('global responsive CSS covers wrapping, table overflow, shell header, and mobile sider', () => {
@@ -263,6 +280,7 @@ test('buildDefaultPresetProfile enables advanced context toggles with source-fir
   assert.equal(profile.useBestFuzzyTm, true);
   assert.equal(profile.useUploadedGlossary, true);
   assert.equal(profile.useCustomTm, true);
+  assert.deepEqual(profile.customTmMatchBuckets, ['101%', '100%', '95-99', '85-94', '75-84']);
   assert.equal(profile.useBrief, true);
   assert.equal(profile.usePreviewContext, true);
   assert.equal(profile.usePreviewFullText, false);

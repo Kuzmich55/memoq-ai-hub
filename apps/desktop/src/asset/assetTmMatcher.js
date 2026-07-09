@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const DEFAULT_MIN_SCORE = 75;
 const DEFAULT_MAX_MATCHES = 3;
 const DEFAULT_CANDIDATE_LIMIT = 50;
+const CUSTOM_TM_MATCH_BUCKETS = Object.freeze(['101%', '100%', '95-99', '85-94', '75-84', '<75']);
+const DEFAULT_CUSTOM_TM_MATCH_BUCKETS = Object.freeze(['101%', '100%', '95-99', '85-94', '75-84']);
 
 function normalizeWhitespace(value) {
   return String(value || '')
@@ -147,6 +149,25 @@ function bucketTmScore(score, hasContextMatch = false) {
   return '<75';
 }
 
+function normalizeCustomTmMatchBuckets(value) {
+  if (!Array.isArray(value)) {
+    return [...DEFAULT_CUSTOM_TM_MATCH_BUCKETS];
+  }
+
+  const seen = new Set();
+  const normalized = [];
+  for (const item of value) {
+    const bucket = String(item || '').trim();
+    if (!CUSTOM_TM_MATCH_BUCKETS.includes(bucket) || seen.has(bucket)) {
+      continue;
+    }
+    seen.add(bucket);
+    normalized.push(bucket);
+  }
+
+  return normalized.length ? normalized : [...DEFAULT_CUSTOM_TM_MATCH_BUCKETS];
+}
+
 function normalizeCustomTmEntry(entry = {}, index = 0, asset = {}) {
   const sourceText = normalizeWhitespace(entry.sourceText || entry.sourceTerm || entry.source || '');
   const targetText = normalizeWhitespace(entry.targetText || entry.targetTerm || entry.target || '');
@@ -272,7 +293,8 @@ function matchCustomTmEntries({
   targetLanguage,
   minScore = DEFAULT_MIN_SCORE,
   maxMatches = DEFAULT_MAX_MATCHES,
-  candidateLimit = DEFAULT_CANDIDATE_LIMIT
+  candidateLimit = DEFAULT_CANDIDATE_LIMIT,
+  allowedBuckets
 } = {}) {
   const entries = Array.isArray(matcher?.entries) ? matcher.entries : [];
   if (!entries.length || !segment) {
@@ -323,12 +345,21 @@ function matchCustomTmEntries({
       return String(left.sourceText).localeCompare(String(right.sourceText));
     });
 
+  const selectedBuckets = normalizeCustomTmMatchBuckets(allowedBuckets);
+  const selectedBucketSet = new Set(selectedBuckets);
+  const useScoreThreshold = !Array.isArray(allowedBuckets);
+
   return dedupeCustomTmMatches(sortedMatches)
-    .filter((match) => match.score >= minScore)
+    .filter((match) => (
+      selectedBucketSet.has(match.bucket)
+      && (!useScoreThreshold || match.score >= minScore)
+    ))
     .slice(0, Math.max(1, Number(maxMatches) || DEFAULT_MAX_MATCHES));
 }
 
 module.exports = {
+  CUSTOM_TM_MATCH_BUCKETS,
+  DEFAULT_CUSTOM_TM_MATCH_BUCKETS,
   DEFAULT_MAX_MATCHES,
   DEFAULT_MIN_SCORE,
   bucketTmScore,
@@ -339,5 +370,6 @@ module.exports = {
   levenshteinDistance,
   matchCustomTmEntries,
   normalizeCustomTmEntry,
+  normalizeCustomTmMatchBuckets,
   tokenizeForTmMatch
 };

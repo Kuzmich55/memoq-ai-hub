@@ -9,8 +9,11 @@ const {
   renderTemplate,
   SYSTEM_PROMPT_FORBIDDEN_PLACEHOLDERS
 } = require('../shared/promptTemplate');
+const {
+  normalizeCustomTmMatchBuckets
+} = require('../asset/assetTmMatcher');
 
-const DEFAULT_PROFILE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, TM hints, and document context.';
+const DEFAULT_PROFILE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, memoQ TM hints, uploaded TM matches, and document context.';
 const DEFAULT_PROFILE_USER_PROMPT = [
   'Translate the segment below and return only the translation.',
   'Use the segment payload fields for matched terminology, TM hints, and neighboring context whenever they are present.',
@@ -28,7 +31,7 @@ const DEFAULT_PROFILE_USER_PROMPT = [
   ']{{below-source-text}}[',
   ']'
 ].join('\n');
-const DEFAULT_BATCH_SYSTEM_PROMPT = 'You are translating a batch from {{source-language}} to {{target-language}}. Keep terminology, placeholders, and formatting consistent across every segment. Use each segment payload for matched terminology, TM hints, and document context.';
+const DEFAULT_BATCH_SYSTEM_PROMPT = 'You are translating a batch from {{source-language}} to {{target-language}}. Keep terminology, placeholders, and formatting consistent across every segment. Use each segment payload for matched terminology, memoQ TM hints, uploaded TM matches, and document context.';
 const DEFAULT_BATCH_USER_PROMPT = [
   'Translate the segment below and return only the translation for that segment.',
   'Use the segment payload fields for matched terminology and TM hints whenever they are present.',
@@ -101,7 +104,7 @@ function createInstructionSection(profile, requestType, renderedUserPrompt, help
 }
 
 function createTmSection(profile, tmSource, tmTarget) {
-  if (!profile?.useBestFuzzyTm) {
+  if (profile?.useBestFuzzyTm === false) {
     return '';
   }
 
@@ -205,13 +208,13 @@ function buildPromptTemplateContext({
     targetLanguage,
     sourceText,
     targetText: segment.targetText,
-    tmSource,
-    tmTarget,
+    tmSource: profile?.useBestFuzzyTm === false ? '' : tmSource,
+    tmTarget: profile?.useBestFuzzyTm === false ? '' : tmTarget,
     glossaryText: String(hasSegmentGlossary ? (normalizedTbContext.glossaryText || '') : (normalizedAssetContext.glossaryText || '')),
     tbMetadataText: String(hasSegmentTbMetadata ? (normalizedTbContext.tbMetadataText || '') : (normalizedAssetContext.tbMetadataText || '')),
     briefText: normalizedAssetContext.briefText,
-    customTmSourceText: profile?.useCustomTm === false ? '' : (topCustomTmMatch?.sourceText || tmSource),
-    customTmTargetText: profile?.useCustomTm === false ? '' : (topCustomTmMatch?.targetText || tmTarget),
+    customTmSourceText: profile?.useCustomTm === false ? '' : (topCustomTmMatch?.sourceText || ''),
+    customTmTargetText: profile?.useCustomTm === false ? '' : (topCustomTmMatch?.targetText || ''),
     aboveText: segment.above,
     belowText: segment.below,
     aboveSourceText: segment.aboveSourceText,
@@ -358,8 +361,9 @@ function buildSegmentPayload({
   profile,
   profileInstructions = ''
 }) {
-  const tmSourceText = String(segment.tmSource || '');
-  const tmTargetText = String(segment.tmTarget || '');
+  const tmSourceText = profile?.useBestFuzzyTm === false ? '' : String(segment.tmSource || '');
+  const tmTargetText = profile?.useBestFuzzyTm === false ? '' : String(segment.tmTarget || '');
+  const selectedBuckets = profile?.useCustomTm === false ? [] : normalizeCustomTmMatchBuckets(profile?.customTmMatchBuckets);
   const customTmMatches = profile?.useCustomTm === false
     ? []
     : (Array.isArray(segment.customTmMatches) ? segment.customTmMatches : [])
@@ -391,8 +395,9 @@ function buildSegmentPayload({
     customTmMatches: {
       matches: customTmMatches,
       available: customTmMatches.length > 0,
+      selectedBuckets,
       guidance: customTmMatches.length
-        ? 'Use 100% and 95-99 AI Hub TM score matches as strong guidance, 85-94 as preferred reference, and 75-84 as terminology or style reference.'
+        ? 'memoQ tmHints are the official project best fuzzy reference and take priority when sources conflict. Use uploaded TM 101%, 100%, and 95-99 AI Hub TM score matches as strong supplemental guidance; use 85-94 as preferred style or terminology reference; use 75-84 as weak terminology or consistency reference; use <75 only as low-confidence context when explicitly selected.'
         : ''
     },
     terminology: {

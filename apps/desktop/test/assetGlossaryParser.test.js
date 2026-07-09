@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 
 const workbookStore = new Map();
+let lastXmlParserOptions = null;
 const XLSX = {
   readFile(filePath) {
     return workbookStore.get(filePath) || { SheetNames: [], Sheets: {} };
@@ -32,6 +33,10 @@ const XLSX = {
 };
 
 class XMLParser {
+  constructor(options = {}) {
+    lastXmlParserOptions = options;
+  }
+
   parse(xml) {
     if (xml.includes('<tmx')) {
       if (xml.includes('x-context-pre') && xml.includes('neural filter')) {
@@ -325,6 +330,8 @@ test('asset glossary parser reads memoQ utf-16 tmx context pre and post props', 
     assert.equal(match.score, 101);
     assert.equal(match.bucket, '101%');
     assert.equal(match.targetText, '漫画');
+    assert.equal(lastXmlParserOptions.processEntities.maxTotalExpansions, 250000);
+    assert.equal(lastXmlParserOptions.processEntities.maxExpandedLength, 10000000);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

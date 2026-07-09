@@ -2,12 +2,14 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+  DEFAULT_CUSTOM_TM_MATCH_BUCKETS,
   bucketTmScore,
   calculatePlaceholderPenalty,
   calculateTokenSimilarity,
   createCustomTmMatcher,
   levenshteinDistance,
   matchCustomTmEntries,
+  normalizeCustomTmMatchBuckets,
   tokenizeForTmMatch
 } = require('../src/asset/assetTmMatcher');
 
@@ -33,6 +35,12 @@ test('custom TM matcher maps memoQ-style score buckets', () => {
   assert.equal(bucketTmScore(94), '85-94');
   assert.equal(bucketTmScore(84), '75-84');
   assert.equal(bucketTmScore(74), '<75');
+});
+
+test('custom TM matcher normalizes selected buckets with safe defaults', () => {
+  assert.deepEqual(normalizeCustomTmMatchBuckets(), DEFAULT_CUSTOM_TM_MATCH_BUCKETS);
+  assert.deepEqual(normalizeCustomTmMatchBuckets([]), DEFAULT_CUSTOM_TM_MATCH_BUCKETS);
+  assert.deepEqual(normalizeCustomTmMatchBuckets(['95-99', 'invalid', '95-99', '<75']), ['95-99', '<75']);
 });
 
 test('custom TM matcher penalizes missing placeholders', () => {
@@ -69,6 +77,64 @@ test('custom TM matcher returns top matches above the 75 threshold', () => {
   assert.equal(matches[0].score, 100);
   assert.equal(matches[0].bucket, '100%');
   assert.equal(matches[0].assetName, 'sample.tmx');
+});
+
+test('custom TM matcher filters matches by selected score buckets', () => {
+  const sourceTokens = Array.from({ length: 20 }, (_, index) => `w${index + 1}`);
+  const nearTokens = [...sourceTokens];
+  nearTokens[19] = 'changed';
+  const matcher = createCustomTmMatcher([
+    {
+      sourceText: sourceTokens.join(' '),
+      targetText: 'Exact target',
+      sourceLang: 'en',
+      targetLang: 'fr',
+      assetName: 'sample.tmx'
+    },
+    {
+      sourceText: nearTokens.join(' '),
+      targetText: 'Near target',
+      sourceLang: 'en',
+      targetLang: 'fr',
+      assetName: 'sample.tmx'
+    },
+    {
+      sourceText: 'w1 w2',
+      targetText: 'Low target',
+      sourceLang: 'en',
+      targetLang: 'fr',
+      assetName: 'sample.tmx'
+    }
+  ]);
+
+  const defaultMatches = matchCustomTmEntries({
+    matcher,
+    segment: { sourceText: sourceTokens.join(' ') },
+    sourceLanguage: 'en',
+    targetLanguage: 'fr',
+    maxMatches: 5
+  });
+  assert.equal(defaultMatches.some((match) => match.bucket === '<75'), false);
+
+  const onlyNear = matchCustomTmEntries({
+    matcher,
+    segment: { sourceText: sourceTokens.join(' ') },
+    sourceLanguage: 'en',
+    targetLanguage: 'fr',
+    allowedBuckets: ['95-99'],
+    maxMatches: 5
+  });
+  assert.deepEqual(onlyNear.map((match) => match.bucket), ['95-99']);
+
+  const lowOnly = matchCustomTmEntries({
+    matcher,
+    segment: { sourceText: sourceTokens.join(' ') },
+    sourceLanguage: 'en',
+    targetLanguage: 'fr',
+    allowedBuckets: ['<75'],
+    maxMatches: 5
+  });
+  assert.deepEqual(lowOnly.map((match) => match.bucket), ['<75']);
 });
 
 test('custom TM matcher deduplicates repeated TM hits before limiting top matches', () => {

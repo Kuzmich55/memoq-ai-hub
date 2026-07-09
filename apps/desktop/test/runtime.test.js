@@ -2343,7 +2343,7 @@ test('runtime exposes update status and portable download-page flow through app 
             status: 200,
             async json() {
               return {
-                version: '1.0.21',
+                version: '1.0.22',
                 publishedAt: '2026-03-26T00:00:00.000Z',
                 releaseNotesUrl: 'https://example.com/release',
                 assets: {
@@ -2368,7 +2368,7 @@ test('runtime exposes update status and portable download-page flow through app 
     const available = await runtime.checkForUpdates({ manual: true });
     const finalState = runtime.getAppState();
 
-    assert.equal(available.latestVersion, '1.0.21');
+    assert.equal(available.latestVersion, '1.0.22');
     assert.equal(available.portableDownloadUrl, 'https://example.com/release');
     assert.equal(finalState.updateCenter.updateStatus, 'available');
     await assert.rejects(() => runtime.downloadPortableUpdate(), /browser download page/i);
@@ -4583,6 +4583,11 @@ test('runtime parses bound custom TMX assets and passes scored custom TM matches
       models: [{ modelName: 'gpt-4.1-mini', enabled: true }]
     });
 
+    const fuzzySourceText = Array.from({ length: 20 }, (_, index) => `token${index + 1}`).join(' ');
+    const fuzzyNearText = [
+      ...Array.from({ length: 19 }, (_, index) => `token${index + 1}`),
+      'changed'
+    ].join(' ');
     const customTmSourcePath = path.join(tempRoot, 'uploaded-memory.tmx');
     fs.writeFileSync(customTmSourcePath, [
       '<tmx><body><tu tuid="tu-1">',
@@ -4622,6 +4627,40 @@ test('runtime parses bound custom TMX assets and passes scored custom TM matches
     const history = runtime.getAppState().historyExplorer.items[0];
     assert.match(history.contextSources.customTmMatches, /100% 100% Restart service => Redemarrer le service/);
     assert.equal(history.segments[0].customTmMatches[0].bucket, '100%');
+
+    const customTmCsvPath = path.join(tempRoot, 'uploaded-bucket-memory.csv');
+    fs.writeFileSync(customTmCsvPath, [
+      'sourceText,targetText,sourceLang,targetLang',
+      `${fuzzySourceText},Exact bucket target,en-US,fr-FR`,
+      `${fuzzyNearText},Near bucket target,en-US,fr-FR`
+    ].join('\n'), 'utf8');
+    const customTmCsvAsset = runtime.importAssetFromPath('custom_tm', customTmCsvPath);
+
+    const filteredProfile = await runtime.saveProfile({
+      name: 'TMX-backed 95 only',
+      providerId: provider.id,
+      useCustomTm: true,
+      userPrompt: '{{source-text}}',
+      assetBindings: [{ assetId: customTmCsvAsset.id, purpose: 'custom_tm' }],
+      customTmMatchBuckets: ['95-99']
+    });
+
+    const filteredResult = await runtime.translate({
+      requestId: 'REQ-CUSTOM-TMX-FILTERED',
+      traceId: 'TRACE-CUSTOM-TMX-FILTERED',
+      contractVersion: '1',
+      sourceLanguage: 'en-US',
+      targetLanguage: 'fr-FR',
+      requestType: 'Plaintext',
+      profileResolution: { profileId: filteredProfile.id, useCase: 'interactive' },
+      metadata: {},
+      segments: [{ index: 0, text: fuzzySourceText, plainText: fuzzySourceText, tmSource: fuzzySourceText, tmTarget: 'Exact bucket target' }]
+    });
+
+    assert.equal(filteredResult.statusCode, 200);
+    assert.equal(providerCalls.length, 2);
+    assert.deepEqual(providerCalls[1].customTmMatches.map((match) => match.bucket), ['95-99']);
+    assert.equal(providerCalls[1].customTmMatches[0].targetText, 'Near bucket target');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

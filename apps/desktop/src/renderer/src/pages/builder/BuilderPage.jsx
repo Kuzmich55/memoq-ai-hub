@@ -21,6 +21,8 @@ import {
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import {
+  CUSTOM_TM_MATCH_BUCKETS,
+  DEFAULT_CUSTOM_TM_MATCH_BUCKETS,
   buildCollapsiblePanelEntries,
   getPanelColumnSpan,
   getPanelContentSpan
@@ -63,7 +65,16 @@ const ASSET_ROLE_CONFIGS = [
     type: 'glossary',
     titleKey: 'context.assetRoleTbTitle',
     hintKey: 'context.assetRoleTbHint',
+    fieldName: 'glossaryAssetId',
     fieldCandidates: ['tbAssetId', 'glossaryAssetId']
+  },
+  {
+    key: 'tm',
+    type: 'custom_tm',
+    titleKey: 'context.assetRoleTmTitle',
+    hintKey: 'context.assetRoleTmHint',
+    fieldName: 'customTmAssetId',
+    fieldCandidates: ['customTmAssetId', 'tmAssetId']
   }
 ];
 
@@ -127,11 +138,12 @@ function buildNextAssetSelections(profile = {}, role, assetId) {
   const currentSelections = profile?.assetSelections && typeof profile.assetSelections === 'object'
     ? profile.assetSelections
     : {};
-  const nextSelections = {
-    glossaryAssetId: String(currentSelections.glossaryAssetId || '')
-  };
+  const nextSelections = ASSET_ROLE_CONFIGS.reduce((selections, item) => ({
+    ...selections,
+    [item.fieldName]: String(currentSelections[item.fieldName] || '')
+  }), {});
   const normalizedAssetId = String(assetId || '').trim();
-  const fieldName = 'glossaryAssetId';
+  const fieldName = role.fieldName || role.fieldCandidates?.[0];
 
   nextSelections[fieldName] = normalizedAssetId;
 
@@ -324,12 +336,19 @@ function TranslationStyleCard({ profile, onChange }) {
   );
 }
 
-function AssetRoleCard({ role, profile, assets, onChange }) {
+function AssetRoleCard({ role, profile, assets, onChange, onProfileChange }) {
   const { t } = useI18n();
   const selectedAssetId = getRoleAssetId(profile, role) || undefined;
+  const selectedBuckets = Array.isArray(profile?.customTmMatchBuckets) && profile.customTmMatchBuckets.length
+    ? profile.customTmMatchBuckets
+    : DEFAULT_CUSTOM_TM_MATCH_BUCKETS;
   const options = assets
     .filter((asset) => asset?.type === role.type)
     .map((asset) => ({ label: asset.name, value: asset.id }));
+  const bucketOptions = CUSTOM_TM_MATCH_BUCKETS.map((bucket) => ({
+    value: bucket,
+    label: bucket === '<75' ? `${bucket} (${t('context.customTmBucketLowConfidence')})` : bucket
+  }));
 
   return (
     <Card size="small" className="builder-subcard" title={t(role.titleKey)}>
@@ -341,6 +360,18 @@ function AssetRoleCard({ role, profile, assets, onChange }) {
           placeholder={t('context.assetSelectorPlaceholder')}
           onChange={(value) => onChange(role, value)}
         />
+        {role.key === 'tm' ? (
+          <>
+            <Select
+              mode="multiple"
+              value={selectedBuckets}
+              options={bucketOptions}
+              placeholder={t('context.customTmBucketSelectorPlaceholder')}
+              onChange={(value) => onProfileChange('customTmMatchBuckets', value)}
+            />
+            <Text type="secondary">{t('context.customTmBucketSelectorHint')}</Text>
+          </>
+        ) : null}
         <Text type="secondary">{t(role.hintKey)}</Text>
       </Space>
     </Card>
@@ -522,7 +553,7 @@ function BuilderEditor({
                 <Row gutter={[16, 16]}>
                   {ASSET_ROLE_CONFIGS.map((role) => (
                     <Col xs={24} xl={8} key={role.key}>
-                      <AssetRoleCard role={role} profile={profile} assets={assets} onChange={handleAssetRoleChange} />
+                      <AssetRoleCard role={role} profile={profile} assets={assets} onChange={handleAssetRoleChange} onProfileChange={onChange} />
                     </Col>
                   ))}
                 </Row>

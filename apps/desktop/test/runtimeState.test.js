@@ -28,6 +28,12 @@ test('runtimeState maps role-based asset selections into legacy bindings', () =>
     { assetId: 'asset-glossary', purpose: 'glossary' },
     { assetId: 'asset-custom-tm', purpose: 'custom_tm' }
   ]);
+  assert.deepEqual(profile.customTmMatchBuckets, ['101%', '100%', '95-99', '85-94', '75-84']);
+});
+
+test('runtimeState normalizes custom TM match bucket selections', () => {
+  assert.deepEqual(ensureProfile({ customTmMatchBuckets: ['95-99', 'invalid', '95-99', '<75'] }).customTmMatchBuckets, ['95-99', '<75']);
+  assert.deepEqual(ensureProfile({ customTmMatchBuckets: [] }).customTmMatchBuckets, ['101%', '100%', '95-99', '85-94', '75-84']);
 });
 
 test('runtimeState removes profile provider bindings that point to unsupported providers', () => {

@@ -49,6 +49,7 @@ import {
 } from './editorDrafts.mjs';
 import { getProviderDraftSeed } from './providerDraftDefaults.mjs';
 import {
+  DEFAULT_CUSTOM_TM_MATCH_BUCKETS,
   buildDefaultPresetProfile,
   buildHistoryPromptItems,
   getHistoryContextSources,
@@ -382,6 +383,7 @@ function createEmptyProfileDraft() {
     useMetadata: true,
     useUploadedGlossary: true,
     useCustomTm: true,
+    customTmMatchBuckets: [...DEFAULT_CUSTOM_TM_MATCH_BUCKETS],
     useBrief: true,
     usePreviewContext: true,
     usePreviewFullText: false,
@@ -1096,6 +1098,7 @@ function buildProfileFingerprint(profile) {
     useMetadata: profile.useMetadata !== false,
     useUploadedGlossary: profile.useUploadedGlossary !== false,
     useCustomTm: profile.useCustomTm !== false,
+    customTmMatchBuckets: Array.isArray(profile.customTmMatchBuckets) ? profile.customTmMatchBuckets : DEFAULT_CUSTOM_TM_MATCH_BUCKETS,
     useBrief: profile.useBrief !== false,
     usePreviewContext: profile.usePreviewContext === true,
     usePreviewFullText: profile.usePreviewFullText === true,
@@ -1133,6 +1136,8 @@ function buildAssetSelectionsFromBindings(assetBindings = []) {
     }
     if (purpose === 'glossary' && !nextSelections.glossaryAssetId) {
       nextSelections.glossaryAssetId = assetId;
+    } else if (purpose === 'custom_tm' && !nextSelections.customTmAssetId) {
+      nextSelections.customTmAssetId = assetId;
     }
   }
   return nextSelections;
@@ -1141,9 +1146,13 @@ function buildAssetSelectionsFromBindings(assetBindings = []) {
 function buildAssetBindingsFromSelections(assetSelections = {}) {
   const nextBindings = [];
   const glossaryAssetId = String(assetSelections?.glossaryAssetId || '').trim();
+  const customTmAssetId = String(assetSelections?.customTmAssetId || '').trim();
 
   if (glossaryAssetId) {
     nextBindings.push({ assetId: glossaryAssetId, purpose: 'glossary' });
+  }
+  if (customTmAssetId) {
+    nextBindings.push({ assetId: customTmAssetId, purpose: 'custom_tm' });
   }
 
   return nextBindings;

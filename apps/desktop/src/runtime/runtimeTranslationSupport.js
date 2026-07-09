@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { normalizeCustomTmMatchBuckets } = require('../asset/assetTmMatcher');
 const { ERROR_CODES } = require('../shared/desktopContract');
 const { normalizeMemoQMetadata, normalizeSegmentMetadataItem } = require('../shared/memoqMetadataNormalizer');
 const { listTemplatePlaceholders } = require('../shared/promptTemplate');
@@ -115,6 +116,7 @@ function createTranslationCacheKey({
       useBestFuzzyTm: profile?.useBestFuzzyTm !== false,
       useUploadedGlossary: profile?.useUploadedGlossary !== false,
       useCustomTm: profile?.useCustomTm !== false,
+      customTmMatchBuckets: normalizeCustomTmMatchBuckets(profile?.customTmMatchBuckets),
       useBrief: profile?.useBrief !== false,
       usePreviewContext: profile?.usePreviewContext !== false,
       usePreviewFullText: profile?.usePreviewFullText !== false,

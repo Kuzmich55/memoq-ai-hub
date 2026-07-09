@@ -7,7 +7,7 @@ export const APP_SECTIONS = [
   { key: 'history', navKey: 'history' }
 ];
 
-export const DEFAULT_PRESET_SINGLE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, TM hints, and document context.';
+export const DEFAULT_PRESET_SINGLE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, memoQ TM hints, uploaded TM matches, and document context.';
 export const DEFAULT_PRESET_SINGLE_USER_PROMPT = [
   'Translate the segment below and return only the translation.',
   'Use the segment payload fields for matched terminology, TM hints, and neighboring context whenever they are present.',
@@ -25,7 +25,7 @@ export const DEFAULT_PRESET_SINGLE_USER_PROMPT = [
   ']{{below-source-text}}[',
   ']'
 ].join('\n');
-export const DEFAULT_PRESET_BATCH_SYSTEM_PROMPT = 'You are translating a batch from {{source-language}} to {{target-language}}. Keep terminology, placeholders, and formatting consistent across every segment. Use each segment payload for matched terminology, TM hints, and document context.';
+export const DEFAULT_PRESET_BATCH_SYSTEM_PROMPT = 'You are translating a batch from {{source-language}} to {{target-language}}. Keep terminology, placeholders, and formatting consistent across every segment. Use each segment payload for matched terminology, memoQ TM hints, uploaded TM matches, and document context.';
 export const DEFAULT_PRESET_BATCH_USER_PROMPT = [
   'Translate the segment below and return only the translation for that segment.',
   'Use the segment payload fields for matched terminology and TM hints whenever they are present.',
@@ -36,6 +36,8 @@ export const DEFAULT_PRESET_BATCH_USER_PROMPT = [
 
 const EXPANDED_PANEL_SPAN = 6;
 const COLLAPSED_PANEL_SPAN = 4;
+export const CUSTOM_TM_MATCH_BUCKETS = ['101%', '100%', '95-99', '85-94', '75-84', '<75'];
+export const DEFAULT_CUSTOM_TM_MATCH_BUCKETS = ['101%', '100%', '95-99', '85-94', '75-84'];
 
 function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -52,6 +54,7 @@ export function buildDefaultPresetProfile() {
     useMetadata: true,
     useUploadedGlossary: true,
     useCustomTm: true,
+    customTmMatchBuckets: [...DEFAULT_CUSTOM_TM_MATCH_BUCKETS],
     useBrief: true,
     usePreviewContext: true,
     usePreviewFullText: false,

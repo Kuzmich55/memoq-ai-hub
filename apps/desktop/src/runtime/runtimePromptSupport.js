@@ -8,7 +8,8 @@ const {
 } = require('../asset/assetTerminology');
 const {
   createCustomTmMatcher,
-  matchCustomTmEntries
+  matchCustomTmEntries,
+  normalizeCustomTmMatchBuckets
 } = require('../asset/assetTmMatcher');
 const {
   createTemplateContext,
@@ -111,18 +112,23 @@ function buildSegmentCustomTmContext({
     matcher: assetContext?.customTm?.matcher || null,
     segment,
     sourceLanguage: payload?.sourceLanguage || '',
-    targetLanguage: payload?.targetLanguage || ''
+    targetLanguage: payload?.targetLanguage || '',
+    allowedBuckets: profile?.customTmMatchBuckets
   });
+  const selectedBuckets = normalizeCustomTmMatchBuckets(profile?.customTmMatchBuckets);
 
   return {
     matches,
-    fingerprint: matches.map((match) => [
-      match.assetId,
-      match.sourceText,
-      match.targetText,
-      match.score,
-      match.bucket
-    ].join('|')).join('\n')
+    fingerprint: [
+      `buckets:${selectedBuckets.join(',')}`,
+      ...matches.map((match) => [
+        match.assetId,
+        match.sourceText,
+        match.targetText,
+        match.score,
+        match.bucket
+      ].join('|'))
+    ].join('\n')
   };
 }
 
@@ -145,13 +151,13 @@ function buildTemplatePreflightContext({
     targetLanguage: payload.targetLanguage,
     sourceText: segment?.sourceText || '',
     targetText: segmentPreview.targetText || '',
-    tmSource: profile?.useBestFuzzyTm === false && profile?.useCustomTm === false ? '' : (segment?.tmSource || ''),
-    tmTarget: profile?.useBestFuzzyTm === false && profile?.useCustomTm === false ? '' : (segment?.tmTarget || ''),
+    tmSource: profile?.useBestFuzzyTm === false ? '' : (segment?.tmSource || ''),
+    tmTarget: profile?.useBestFuzzyTm === false ? '' : (segment?.tmTarget || ''),
     glossaryText: hasSegmentGlossary ? (segment?.tbContext?.glossaryText || '') : (assetContext?.glossaryText || ''),
     tbMetadataText: hasSegmentTbMetadata ? (segment?.tbContext?.tbMetadataText || '') : (assetContext?.tbMetadataText || ''),
     briefText: assetContext?.briefText || '',
-    customTmSourceText: profile?.useCustomTm === false ? '' : (segment?.customTmMatches?.[0]?.sourceText || segment?.tmSource || ''),
-    customTmTargetText: profile?.useCustomTm === false ? '' : (segment?.customTmMatches?.[0]?.targetText || segment?.tmTarget || ''),
+    customTmSourceText: profile?.useCustomTm === false ? '' : (segment?.customTmMatches?.[0]?.sourceText || ''),
+    customTmTargetText: profile?.useCustomTm === false ? '' : (segment?.customTmMatches?.[0]?.targetText || ''),
     aboveText: profile?.usePreviewContext === false || profile?.usePreviewAboveBelow === false ? '' : (segmentPreview.above || ''),
     belowText: profile?.usePreviewContext === false || profile?.usePreviewAboveBelow === false ? '' : (segmentPreview.below || ''),
     aboveSourceText: profile?.usePreviewContext === false || profile?.usePreviewAboveBelow === false ? '' : (segmentPreview.aboveSourceText || ''),

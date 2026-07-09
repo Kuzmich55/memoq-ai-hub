@@ -13,7 +13,7 @@ const {
 } = require('../provider/providerRegistry');
 const { createInitialState } = require('./runtimePersistence');
 
-const DEFAULT_PROFILE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, TM hints, and document context.';
+const DEFAULT_PROFILE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, memoQ TM hints, uploaded TM matches, and document context.';
 const DEFAULT_PROFILE_USER_PROMPT = [
   'Translate the segment below and return only the translation.',
   'Use the segment payload fields for matched terminology, TM hints, and neighboring context whenever they are present.',
@@ -31,7 +31,7 @@ const DEFAULT_PROFILE_USER_PROMPT = [
   ']{{below-source-text}}[',
   ']'
 ].join('\n');
-const DEFAULT_BATCH_SYSTEM_PROMPT = 'You are translating a batch from {{source-language}} to {{target-language}}. Keep terminology, placeholders, and formatting consistent across every segment. Use each segment payload for matched terminology, TM hints, and document context.';
+const DEFAULT_BATCH_SYSTEM_PROMPT = 'You are translating a batch from {{source-language}} to {{target-language}}. Keep terminology, placeholders, and formatting consistent across every segment. Use each segment payload for matched terminology, memoQ TM hints, uploaded TM matches, and document context.';
 const DEFAULT_BATCH_USER_PROMPT = [
   'Translate the segment below and return only the translation for that segment.',
   'Use the segment payload fields for matched terminology and TM hints whenever they are present.',
@@ -236,6 +236,7 @@ function ensureProfile(profile = {}) {
     useMetadata: profile.useMetadata !== false,
     useUploadedGlossary: profile.useUploadedGlossary !== false,
     useCustomTm: profile.useCustomTm !== false,
+    customTmMatchBuckets: profile.customTmMatchBuckets,
     useBrief: profile.useBrief !== false,
     usePreviewContext: profile.usePreviewContext === true,
     usePreviewFullText: profile.usePreviewFullText === true,

@@ -951,8 +951,8 @@ function createProviderRegistry(options = {}) {
     const sanitizedSegments = (Array.isArray(segments) ? segments : []).map((segment) => ({
       index: Number(segment.index),
       sourceText: String(segment.sourceText || ''),
-      tmSource: (profile?.useBestFuzzyTm || profile?.useCustomTm) ? String(segment.tmSource || '') : '',
-      tmTarget: (profile?.useBestFuzzyTm || profile?.useCustomTm) ? String(segment.tmTarget || '') : '',
+      tmSource: profile?.useBestFuzzyTm === false ? '' : String(segment.tmSource || ''),
+      tmTarget: profile?.useBestFuzzyTm === false ? '' : String(segment.tmTarget || ''),
       customTmMatches: profile?.useCustomTm === false
         ? []
         : (Array.isArray(segment.customTmMatches) ? segment.customTmMatches : []),

@@ -3,8 +3,12 @@ const assert = require('node:assert/strict');
 const {
   createTbMatcher
 } = require('../src/asset/assetTerminology');
+const {
+  createCustomTmMatcher
+} = require('../src/asset/assetTmMatcher');
 
 const {
+  buildSegmentCustomTmContext,
   buildSegmentTbContext,
   buildTemplatePreflightContext,
   createEmptyAssetContext,
@@ -134,6 +138,57 @@ test('runtime prompt support omits disabled tm and preview fields from template 
   assert.equal(context['below-text'], '');
   assert.equal(context['summary-text'], '');
   assert.equal(context['full-text'], '');
+});
+
+test('runtime prompt support separates disabled memoQ TM hints from uploaded TM placeholders', () => {
+  const context = buildTemplatePreflightContext({
+    payload: { sourceLanguage: 'en', targetLanguage: 'fr' },
+    profile: {
+      useBestFuzzyTm: false,
+      useCustomTm: true,
+      usePreviewContext: false
+    },
+    assetContext: {},
+    previewContext: {},
+    segment: {
+      sourceText: 'Save',
+      tmSource: 'memoQ source',
+      tmTarget: 'memoQ target',
+      customTmMatches: [{
+        sourceText: 'uploaded source',
+        targetText: 'uploaded target'
+      }]
+    }
+  });
+
+  assert.equal(context['tm-source-text'], '');
+  assert.equal(context['tm-target-text'], '');
+  assert.equal(context['custom-tm-source-text'], 'uploaded source');
+  assert.equal(context['custom-tm-target-text'], 'uploaded target');
+});
+
+test('runtime prompt support filters uploaded TM matches by profile buckets', () => {
+  const sourceTokens = Array.from({ length: 20 }, (_, index) => `w${index + 1}`);
+  const nearTokens = [...sourceTokens];
+  nearTokens[19] = 'changed';
+  const assetContext = {
+    customTm: {
+      matcher: createCustomTmMatcher([
+        { sourceText: sourceTokens.join(' '), targetText: 'Exact target', sourceLang: 'en', targetLang: 'fr' },
+        { sourceText: nearTokens.join(' '), targetText: 'Near target', sourceLang: 'en', targetLang: 'fr' }
+      ])
+    }
+  };
+
+  const context = buildSegmentCustomTmContext({
+    assetContext,
+    segment: { sourceText: sourceTokens.join(' ') },
+    payload: { sourceLanguage: 'en', targetLanguage: 'fr' },
+    profile: { useCustomTm: true, customTmMatchBuckets: ['95-99'] }
+  });
+
+  assert.deepEqual(context.matches.map((match) => match.bucket), ['95-99']);
+  assert.match(context.fingerprint, /buckets:95-99/);
 });
 
 test('runtime prompt support builds segment tb context from matcher results', () => {
