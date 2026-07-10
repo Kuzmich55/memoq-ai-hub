@@ -44,7 +44,7 @@ function collectLocaleKeys(value, prefix = '') {
 test('app sections expose assets and logs as first-class top-level modules', () => {
   assert.deepEqual(
     APP_SECTIONS.map((item) => item.key),
-    ['dashboard', 'builder', 'assets', 'providers', 'logs', 'history']
+    ['dashboard', 'providers', 'assets', 'builder', 'history', 'logs']
   );
 });
 
@@ -173,10 +173,12 @@ test('global select styles allow selected values and dropdown options to wrap', 
 
 test('dashboard and history use responsive grid and horizontal table scroll', () => {
   const appSource = readRendererSource('App.jsx');
+  const cssSource = readRendererSource('index.css');
 
   assert.match(appSource, /const TABLE_SCROLL_X = 'max-content';/);
   assert.match(appSource, /const WIDE_SIDE_DRAWER_WIDTH = 'min\(920px, calc\(100vw - 32px\)\)';/);
-  assert.match(appSource, /<Col xs=\{24\} sm=\{12\} xl=\{6\} key=\{item\.key\}>/);
+  assert.match(appSource, /className="dashboard-journey-grid"/);
+  assert.match(cssSource, /grid-template-columns:\s*repeat\(auto-fit, minmax\(190px, 1fr\)\)/);
   assert.match(appSource, /<Col xs=\{24\} xl=\{12\}>/);
   assert.match(appSource, /<Col xs=\{24\} lg=\{12\}>/);
   assert.match(appSource, /<Col xs=\{24\} sm=\{12\} lg=\{8\} xl=\{4\}>/);
@@ -224,7 +226,7 @@ test('setup asset selections include custom TM bindings', () => {
   assert.match(appSource, /nextBindings\.push\(\{ assetId: customTmAssetId, purpose: 'custom_tm' \}\);/);
 });
 
-test('global responsive CSS covers wrapping, table overflow, shell header, and mobile sider', () => {
+test('global responsive CSS covers wrapping, table overflow, shell header, and mobile drawer', () => {
   const appSource = readRendererSource('App.jsx');
   const cssSource = readRendererSource('index.css');
 
@@ -240,8 +242,10 @@ test('global responsive CSS covers wrapping, table overflow, shell header, and m
   assert.match(cssSource, /\.ant-drawer-content-wrapper/);
   assert.match(cssSource, /max-width:\s*calc\(100vw - 32px\)/);
   assert.match(cssSource, /@media \(max-width: 768px\)/);
-  assert.match(cssSource, /\.app-sider\s*\{/);
-  assert.match(cssSource, /width:\s*72px !important/);
+  assert.match(appSource, /shellNavigationMode !== 'drawer' \? \(/);
+  assert.match(appSource, /className="app-nav-drawer"/);
+  assert.doesNotMatch(cssSource, /width:\s*72px !important/);
+  assert.match(cssSource, /\.asset-library-toolbar/);
   assert.match(cssSource, /\.provider-model-manager-toolbar/);
   assert.match(cssSource, /\.asset-library-item \.ant-list-item-action/);
 });

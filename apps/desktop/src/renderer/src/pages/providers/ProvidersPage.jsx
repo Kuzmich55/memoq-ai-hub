@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   Descriptions,
   Dropdown,
   Empty,
@@ -30,6 +31,7 @@ import {
 import { CollapsibleItemList, CollapsibleSidePanel, SidePanelMeta } from '../../components/CollapsibleSidePanel';
 import { useI18n } from '../../i18n';
 import { getProviderConnectionHelperText, isProviderConnectionTestDisabled } from '../../providerConnectionUx.mjs';
+import { activateOnKeyboard } from '../../uiBehavior.mjs';
 
 const { Text, Title } = Typography;
 const TABLE_SCROLL_X = 'max-content';
@@ -126,12 +128,17 @@ function ProviderCatalog({
                     <Text type="secondary">{group.label}</Text>
                   </div>
                   <List
+                    role="listbox"
                     dataSource={group.items}
                     renderItem={(item) => {
                       const tagMeta = getStatusTagMeta(item.status, t);
                       return (
                         <List.Item
+                          role="option"
+                          tabIndex={0}
+                          aria-selected={item.id === currentProvider?.id}
                           onClick={() => onSelectProvider?.(item.id)}
+                          onKeyDown={(event) => activateOnKeyboard(event, () => onSelectProvider?.(item.id))}
                           className={item.id === currentProvider?.id ? 'provider-list-item provider-list-item-active' : 'provider-list-item'}
                         >
                           <Space direction="vertical" size={6} style={{ width: '100%' }}>
@@ -174,7 +181,11 @@ function ProviderCatalog({
             renderExpandedItem={(entry, { compact }) => (
               <List.Item
                 key={entry.id}
+                role="option"
+                tabIndex={0}
+                aria-selected={entry.isSelected}
                 onClick={() => onSelectProvider?.(entry.id)}
+                onKeyDown={(event) => activateOnKeyboard(event, () => onSelectProvider?.(entry.id))}
                 className={entry.isSelected ? `side-panel-row side-panel-row-active ${compact ? 'side-panel-row-compact' : ''}`.trim() : `side-panel-row ${compact ? 'side-panel-row-compact' : ''}`.trim()}
               >
                 <Tooltip placement="right" title={compact ? entry.label : null}>
@@ -198,6 +209,7 @@ function ProviderHeader({
   onPatchProvider,
   onSaveProvider,
   getProviderTypeLabel,
+  isDirty,
   isDraftProvider
 }) {
   const { t } = useI18n();
@@ -218,6 +230,7 @@ function ProviderHeader({
             <Tag color="blue">{getProviderTypeLabel(currentProvider.type, t)}</Tag>
             <Tag color={currentProviderConnectionMeta.color}>{currentProviderConnectionMeta.label}</Tag>
             {isDraftProvider(currentProvider) && <Tag>{t('providers.draft')}</Tag>}
+            {isDirty ? <Tag color="orange">{t('common.unsavedChanges')}</Tag> : null}
           </Space>
         </div>
         <Space wrap size={[10, 10]} className="provider-hero-actions responsive-action-bar">
@@ -469,6 +482,7 @@ export function ProvidersPage(props) {
     groupedProviders,
     focusedModelName,
     insightFocus,
+    isDirty,
     isDraftProvider,
     onAddModelToCurrentProvider,
     onCloseProviderModelManager,
@@ -564,7 +578,12 @@ export function ProvidersPage(props) {
               onPatchProvider={onPatchProvider}
               onSaveProvider={onSaveProvider}
               getProviderTypeLabel={getProviderTypeLabel}
+              isDirty={isDirty}
               isDraftProvider={isDraftProvider}
+            />
+            <ProviderHealthPanel
+              connectionSnapshot={currentProviderConnectionSnapshot}
+              formatLocalTimestamp={formatLocalTimestamp}
             />
 
             <Card className="page-card" title={t('providers.configuration')}>
@@ -610,7 +629,19 @@ export function ProvidersPage(props) {
                   </Space>
                 )}
 
-                <Space direction="vertical" size={8} style={{ display: 'flex' }}>
+                <Collapse
+                  className="provider-advanced-collapse"
+                  items={[{
+                    key: 'advanced',
+                    label: (
+                      <Space direction="vertical" size={0}>
+                        <Text strong>{t('providers.advancedConfiguration')}</Text>
+                        <Text type="secondary">{t('providers.advancedConfigurationHint')}</Text>
+                      </Space>
+                    ),
+                    children: (
+                      <Space direction="vertical" size={18} style={{ display: 'flex' }}>
+                        <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                   <Text strong>{t('providers.responseFormatDefault')}</Text>
                   <Select
                     value={currentProvider.capabilities?.responseFormat || (currentProvider.type === 'openai-compatible' ? 'auto' : 'json_schema')}
@@ -626,7 +657,7 @@ export function ProvidersPage(props) {
                     ]}
                   />
                   <Text type="secondary">{t('providers.responseFormatDefaultHint')}</Text>
-                </Space>
+                        </Space>
 
                 <Space direction="vertical" size={8} style={{ display: 'flex' }}>
                   <Text strong>{t('providers.throughputModeDefault')}</Text>
@@ -650,7 +681,11 @@ export function ProvidersPage(props) {
                     message={t('providers.memoqParallelismNoticeTitle')}
                     description={t('providers.memoqParallelismNotice')}
                   />
-                </Space>
+                        </Space>
+                      </Space>
+                    )
+                  }]}
+                />
 
                 <ProviderModelTable
                   currentProvider={currentProvider}
@@ -675,11 +710,6 @@ export function ProvidersPage(props) {
                   onDiscoverProviderModels={onDiscoverProviderModels}
                   onProviderModelSearchChange={onProviderModelSearchChange}
                   onRemoveModelFromCurrentProvider={onRemoveModelFromCurrentProvider}
-                />
-
-                <ProviderHealthPanel
-                  connectionSnapshot={currentProviderConnectionSnapshot}
-                  formatLocalTimestamp={formatLocalTimestamp}
                 />
               </Space>
             </Card>

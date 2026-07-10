@@ -5,9 +5,9 @@ const { builtinModules, createRequire } = require('module');
 
 const desktopNodeModulesPath = path.join(__dirname, 'node_modules');
 const workspaceNodeModulesPath = path.join(__dirname, '..', '..', 'node_modules');
-const sourceNodeModulesPath = fs.existsSync(desktopNodeModulesPath)
-  ? desktopNodeModulesPath
-  : workspaceNodeModulesPath;
+const sourceNodeModulesPath = fs.existsSync(workspaceNodeModulesPath)
+  ? workspaceNodeModulesPath
+  : desktopNodeModulesPath;
 const sqlWasmPath = path.join(sourceNodeModulesPath, 'sql.js', 'dist', 'sql-wasm.wasm');
 const integrationDllSourcePath = path.join(__dirname, '..', '..', 'native', 'plugin', 'MemoQ.AI.Desktop.Plugin', 'bin', 'Release', 'net48', 'MemoQ.AI.Hub.Plugin.dll');
 const integrationDllTargetPath = path.join(__dirname, 'build-resources', 'memoq-integration', 'MemoQ.AI.Hub.Plugin.dll');
@@ -108,13 +108,32 @@ function findRuntimePackageNames(buildPath) {
 }
 
 function resolvePackageDirectory(packageName) {
-  const directPackagePath = path.join(sourceNodeModulesPath, packageName);
-  if (fs.existsSync(directPackagePath)) {
-    return fs.realpathSync(directPackagePath);
+  const nodeModulesPaths = new Set([
+    sourceNodeModulesPath,
+    desktopNodeModulesPath,
+    workspaceNodeModulesPath
+  ]);
+  for (const nodeModulesPath of nodeModulesPaths) {
+    const directPackagePath = path.join(nodeModulesPath, packageName);
+    if (fs.existsSync(directPackagePath)) {
+      return fs.realpathSync(directPackagePath);
+    }
+  }
+
+  const resolutionPaths = [__dirname, sourceNodeModulesPath, workspaceNodeModulesPath];
+
+  try {
+    const resolvedPackageJsonPath = buildRequire.resolve(`${packageName}/package.json`, {
+      paths: resolutionPaths
+    });
+
+    return fs.realpathSync(path.dirname(resolvedPackageJsonPath));
+  } catch {
+    // Some packages do not export package.json. Fall back to their runtime entry.
   }
 
   const resolvedEntryPath = buildRequire.resolve(packageName, {
-    paths: [__dirname, sourceNodeModulesPath]
+    paths: resolutionPaths
   });
 
   let currentDir = path.dirname(resolvedEntryPath);

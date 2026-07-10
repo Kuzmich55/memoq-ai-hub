@@ -9,6 +9,7 @@ import {
   Tooltip,
   Typography
 } from 'antd';
+import { activateOnKeyboard } from '../uiBehavior.mjs';
 
 const { Text } = Typography;
 
@@ -72,6 +73,7 @@ export function CollapsibleItemList({
 
   return (
     <List
+      role="listbox"
       size="small"
       className={`side-panel-list ${collapsed ? 'side-panel-list-collapsed' : ''} ${listClassName}`.trim()}
       dataSource={entries}
@@ -88,7 +90,11 @@ export function ProfileListRow({ entry, compact, onClick }) {
   return (
     <List.Item
       key={entry.id}
+      role="option"
+      tabIndex={0}
+      aria-selected={entry.isSelected}
       onClick={onClick}
+      onKeyDown={(event) => activateOnKeyboard(event, onClick)}
       className={entry.isSelected ? `side-panel-row side-panel-row-active ${compact ? 'side-panel-row-compact' : ''}`.trim() : `side-panel-row ${compact ? 'side-panel-row-compact' : ''}`.trim()}
     >
       <div className="side-panel-row-content">

@@ -56,10 +56,11 @@ Confirmed translations can also flow back through `StoreTranslation` so the desk
 
 The current dashboard and user flow are aligned around this order:
 
-1. Install the plugin DLL.
-2. Configure a provider.
-3. Build a profile in Builder.
-4. Review translation history.
+1. Install or repair the memoQ integration.
+2. Connect and test an AI service.
+3. Upload optional terminology or translation-memory assets.
+4. Create and save a translation profile in Setup.
+5. Run a translation in memoQ and review the translation record.
 
 If you are setting up the app for the first time, this is the path that matches the shipped UI.
 

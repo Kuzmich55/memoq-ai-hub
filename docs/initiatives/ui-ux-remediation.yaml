@@ -1,0 +1,30 @@
+id: ui-ux-remediation
+title: memoQ AI Hub desktop UI and UX remediation
+status: complete
+owner: repository maintainers
+repos:
+  - path: ../..
+    role: source-of-truth
+source_plan: docs/specs/ui-ux-remediation/spec.md
+spec_link: docs/specs/ui-ux-remediation/spec.md
+verification_link: docs/specs/ui-ux-remediation/verification.md
+github_links:
+  project: pending
+  issues: []
+current_stage: complete
+last_verified_commit: "pending commit; verified working tree on codex/ui-ux-remediation at 2026-07-10"
+next_action: none
+allowed_interruptions:
+  - emergency production fix
+  - security or data correctness issue
+drift_guard:
+  ui_contract: docs/ui-governance.md
+  toolchain_contract: package.json and .github/workflows/ci.yml
+  validation_command: pnpm run test:desktop && pnpm run test:repo
+  source_of_truth: repository branch and GitHub CI when a pull request is authorized
+intentional_divergences:
+  - "Automated offscreen Electron capture returned ERR_FAILED in this environment; the packaged Windows application was checked manually at 1366px, 1024px, and 768px and the user reported no issues."
+resume_prompt: >
+  This initiative is complete. If later UI work changes the shell, onboarding
+  journey, custom row interaction, or dense workflow disclosures, use
+  docs/ui-governance.md and the verification matrix as the regression contract.

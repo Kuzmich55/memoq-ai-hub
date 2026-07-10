@@ -1,10 +1,10 @@
 export const APP_SECTIONS = [
   { key: 'dashboard', navKey: 'dashboard' },
-  { key: 'builder', navKey: 'builder' },
-  { key: 'assets', navKey: 'assets' },
   { key: 'providers', navKey: 'providers' },
-  { key: 'logs', navKey: 'logs' },
-  { key: 'history', navKey: 'history' }
+  { key: 'assets', navKey: 'assets' },
+  { key: 'builder', navKey: 'builder' },
+  { key: 'history', navKey: 'history' },
+  { key: 'logs', navKey: 'logs' }
 ];
 
 export const DEFAULT_PRESET_SINGLE_SYSTEM_PROMPT = 'You are a professional translator working from {{source-language}} to {{target-language}}. Preserve placeholders, tags, formatting, and protected content. Follow the structured segment payload for terminology, memoQ TM hints, uploaded TM matches, and document context.';

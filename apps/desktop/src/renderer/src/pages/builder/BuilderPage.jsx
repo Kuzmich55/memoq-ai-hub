@@ -1,4 +1,4 @@
-import { PlusOutlined, SaveOutlined, StarOutlined } from '@ant-design/icons';
+import { MoreOutlined, PlusOutlined, SaveOutlined, StarOutlined } from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -20,6 +20,7 @@ import {
 } from 'antd';
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
+import { activateOnKeyboard } from '../../uiBehavior.mjs';
 import {
   CUSTOM_TM_MATCH_BUCKETS,
   DEFAULT_CUSTOM_TM_MATCH_BUCKETS,
@@ -398,8 +399,11 @@ function PlaceholderDrawer({ open, targetField, supportedPlaceholders, onClose, 
           dataSource={supportedPlaceholders}
           renderItem={(item) => (
             <List.Item
+              role="button"
+              tabIndex={0}
               className="builder-placeholder-item"
               onClick={() => onInsert(item.token)}
+              onKeyDown={(event) => activateOnKeyboard(event, () => onInsert(item.token))}
             >
               <Space direction="vertical" size={2} style={{ width: '100%' }}>
                 <Text strong>{`{{${item.token}}}`}</Text>
@@ -431,6 +435,7 @@ function BuilderEditor({
   onBypassTranslationCacheOnce,
   onClearTranslationCache,
   translationCacheBypassPending,
+  isDirty,
   isDefaultProfile
 }) {
   const { t } = useI18n();
@@ -457,16 +462,31 @@ function BuilderEditor({
     <>
       <Card
         className="page-card"
-        title={t('context.profileEditor')}
+        title={(
+          <Space wrap size={[8, 8]}>
+            <span>{t('context.profileEditor')}</span>
+            {isDirty ? <Tag color="orange">{t('common.unsavedChanges')}</Tag> : null}
+          </Space>
+        )}
         extra={(
           <Space wrap className="responsive-action-bar">
             <Button icon={<StarOutlined />} onClick={onSetDefault} disabled={isDefaultProfile}>
               {t('context.setAsDefaultProfile')}
             </Button>
             <Button onClick={onDuplicate}>{t('common.duplicate')}</Button>
-            <Button onClick={onDiscard}>{t('context.discardChanges')}</Button>
-            <Button danger onClick={onDelete}>{t('context.deleteProfile')}</Button>
-            <Button type="primary" icon={<SaveOutlined />} onClick={onSave}>{t('context.saveProfile')}</Button>
+            <Dropdown
+              menu={{
+                items: [{ key: 'delete', danger: true, label: t('context.deleteProfile') }],
+                onClick: ({ key }) => {
+                  if (key === 'delete') {
+                    onDelete();
+                  }
+                }
+              }}
+              trigger={['click']}
+            >
+              <Button icon={<MoreOutlined />}>{t('common.more')}</Button>
+            </Dropdown>
           </Space>
         )}
       >
@@ -675,6 +695,7 @@ function BuilderEditor({
 
           <div className="builder-sticky-actions" data-testid="builder-sticky-actions">
             <Space wrap size={[10, 10]} className="builder-sticky-actions-inner responsive-action-bar">
+              {isDirty ? <Tag color="orange">{t('common.unsavedChanges')}</Tag> : null}
               <Button onClick={onDiscard}>{t('context.discardChanges')}</Button>
               <Button type="primary" icon={<SaveOutlined />} onClick={onSave}>{t('context.saveProfile')}</Button>
             </Space>
@@ -691,6 +712,7 @@ export default function BuilderPage({
   currentProfile = null,
   providers = [],
   assets = [],
+  isDirty = false,
   supportedPlaceholders = [],
   templateIssues = [],
   onSelectProfile,
@@ -742,6 +764,7 @@ export default function BuilderPage({
               onBypassTranslationCacheOnce={onBypassTranslationCacheOnce}
               onClearTranslationCache={onClearTranslationCache}
               translationCacheBypassPending={translationCacheBypassPending}
+              isDirty={isDirty}
               isDefaultProfile={currentProfile?.id === defaultProfileId}
               onDiscard={onDiscardProfile}
               onDuplicate={onDuplicateProfile}

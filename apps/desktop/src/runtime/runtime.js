@@ -584,11 +584,13 @@ async function createRuntime(options = {}) {
 
   function buildChecklist(state, history, integration, providers) {
     const enabledProviderCount = providers.filter((item) => item.enabled).length;
+    const assetCount = Array.isArray(state.assets) ? state.assets.length : 0;
     return [
-      { key: 'install-plugin', title: '1. Install plugin', subtitle: integration.status === 'installed' ? 'dll installed' : 'dll not installed', actionLabel: 'Install' },
-      { key: 'provider-hub', title: '2. Configure provider', subtitle: enabledProviderCount ? `${enabledProviderCount} provider(s)` : 'No provider yet', actionLabel: 'Configure' },
-      { key: 'context-builder', title: '3. Build context', subtitle: state.profiles.length ? `${state.profiles.length} profile(s)` : 'No profile yet', actionLabel: 'Build' },
-      { key: 'history', title: '4. Verify run', subtitle: history.length ? `${history.length} record(s)` : 'No history yet', actionLabel: 'Review' }
+      { key: 'install-plugin', title: '1. Install integration', subtitle: integration.status === 'installed' ? 'Integration ready' : 'Integration not installed', actionLabel: 'Install or repair', completed: integration.status === 'installed', count: integration.status === 'installed' ? 1 : 0 },
+      { key: 'provider-hub', title: '2. Connect AI service', subtitle: enabledProviderCount ? `${enabledProviderCount} service(s)` : 'No AI service yet', actionLabel: 'Connect', completed: enabledProviderCount > 0, count: enabledProviderCount },
+      { key: 'asset-hub', title: '3. Add optional assets', subtitle: assetCount ? `${assetCount} asset(s)` : 'Optional — no assets uploaded', actionLabel: 'Add assets', completed: assetCount > 0, optional: true, count: assetCount },
+      { key: 'context-builder', title: '4. Create profile', subtitle: state.profiles.length ? `${state.profiles.length} profile(s)` : 'No profile yet', actionLabel: 'Create', completed: state.profiles.length > 0, count: state.profiles.length },
+      { key: 'history', title: '5. Review a run', subtitle: history.length ? `${history.length} record(s)` : 'No translation records yet', actionLabel: 'Review', completed: history.length > 0, count: history.length }
     ];
   }
 

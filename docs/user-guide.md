@@ -195,6 +195,14 @@ In memoQ MT settings, point these features to **memoQ AI Hub**:
 - Open **History** in the desktop app to inspect source text, target text, latency, and success data
 - Use **Dashboard** to monitor gateway status, memoQ connectivity, and recent notifications
 
+### Navigation, Drafts, and Detail Views
+
+- The app restores the last valid page, navigation preference, and per-page scroll position.
+- At 769–1199px the navigation becomes compact; at 768px and below, use the menu button to open the navigation drawer.
+- When an AI service or translation profile has unsaved changes, changing pages or selecting another item asks you to save, discard, or stay.
+- In **Translation Records**, common filters remain visible. Open **More filters** for project, subject, status, issue, and date filters.
+- Record summaries remain visible; attempts, metadata, prompts, context, and segments are grouped under **Technical details, prompts, and segments**.
+
 ## FAQ
 
 **The dashboard says disconnected. What should I check?**

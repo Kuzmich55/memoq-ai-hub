@@ -6,6 +6,7 @@ import {
   DeploymentUnitOutlined,
   FileSearchOutlined,
   FileTextOutlined,
+  MenuOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
@@ -17,6 +18,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   Descriptions,
   Dropdown,
   Drawer,
@@ -72,6 +74,16 @@ import {
 import { BuilderPage } from './pages/builder';
 import AssetsPage from './pages/assets/AssetsPage.jsx';
 import { LogsPage } from './pages/logs';
+import {
+  activateOnKeyboard,
+  buildDashboardChecklist,
+  getPageScrollPosition,
+  getShellNavigationMode,
+  readShellState,
+  resolveDirtyNavigationKind,
+  updatePageScrollPosition,
+  writeShellState
+} from './uiBehavior.mjs';
 
 const { Content, Header, Sider } = Layout;
 const { Text, Title } = Typography;
@@ -1568,7 +1580,11 @@ function EditableProfileForm({
 export default function App() {
   const api = useDesktopApi();
   const { t, locale, setLocale } = useI18n();
-  const [activePage, setActivePage] = useState('dashboard');
+  const initialShellStateRef = useRef(null);
+  if (!initialShellStateRef.current) {
+    initialShellStateRef.current = readShellState(globalThis.localStorage);
+  }
+  const [activePage, setActivePage] = useState(() => initialShellStateRef.current.activePage);
   const [state, setState] = useState(null);
   const [profileId, setProfileId] = useState('');
   const [providerId, setProviderId] = useState('');
@@ -1602,7 +1618,11 @@ export default function App() {
   const [historyFilters, setHistoryFilters] = useState(() => createEmptyHistoryFilters());
   const [historyInsightFocus, setHistoryInsightFocus] = useState(null);
   const [providerInsightFocus, setProviderInsightFocus] = useState(null);
-  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(() => initialShellStateRef.current.navCollapsed);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() => Number(globalThis.innerWidth || 1366));
+  const [pendingNavigation, setPendingNavigation] = useState(null);
+  const [navigationResolving, setNavigationResolving] = useState(false);
   const [assetPreviewOpen, setAssetPreviewOpen] = useState(false);
   const [assetPreviewLoading, setAssetPreviewLoading] = useState(false);
   const [assetPreviewRecord, setAssetPreviewRecord] = useState(null);
@@ -1617,18 +1637,35 @@ export default function App() {
   const providerDraftsRef = useRef(providerDraftsById);
   const profileDraftsRef = useRef(profileDraftsById);
   const autoUpdateCheckStartedRef = useRef(false);
+  const pageScrollPositionsRef = useRef(initialShellStateRef.current.pageScrollPositions || {});
+  const navCollapsedRef = useRef(navCollapsed);
 
   providerDraftsRef.current = providerDraftsById;
   profileDraftsRef.current = profileDraftsById;
+  navCollapsedRef.current = navCollapsed;
 
-  const navItems = [
+  const navPageItems = [
     { key: 'dashboard', label: <span className="app-nav-label">{t('nav.dashboard')}</span>, title: t('nav.dashboard'), icon: <AppstoreOutlined className="app-nav-icon" /> },
-    { key: 'builder', label: <span className="app-nav-label">{t('nav.builder')}</span>, title: t('nav.builder'), icon: <DeploymentUnitOutlined className="app-nav-icon" /> },
-    { key: 'assets', label: <span className="app-nav-label">{t('nav.assets')}</span>, title: t('nav.assets'), icon: <DatabaseOutlined className="app-nav-icon" /> },
     { key: 'providers', label: <span className="app-nav-label">{t('nav.providers')}</span>, title: t('nav.providers'), icon: <CloudServerOutlined className="app-nav-icon" /> },
+    { key: 'assets', label: <span className="app-nav-label">{t('nav.assets')}</span>, title: t('nav.assets'), icon: <DatabaseOutlined className="app-nav-icon" /> },
+    { key: 'builder', label: <span className="app-nav-label">{t('nav.builder')}</span>, title: t('nav.builder'), icon: <DeploymentUnitOutlined className="app-nav-icon" /> },
     { key: 'history', label: <span className="app-nav-label">{t('nav.history')}</span>, title: t('nav.history'), icon: <FileSearchOutlined className="app-nav-icon" /> },
     { key: 'logs', label: <span className="app-nav-label">{t('nav.logs')}</span>, title: t('nav.logs'), icon: <FileTextOutlined className="app-nav-icon" /> }
   ];
+  const navItems = [
+    navPageItems[0],
+    { type: 'group', label: <span className="app-nav-group-label">{t('nav.configure')}</span>, children: navPageItems.slice(1, 4) },
+    { type: 'group', label: <span className="app-nav-group-label">{t('nav.activity')}</span>, children: [navPageItems[4]] },
+    { type: 'group', label: <span className="app-nav-group-label">{t('nav.support')}</span>, children: [navPageItems[5]] }
+  ];
+  const pageDescriptions = {
+    dashboard: t('nav.dashboardDescription'),
+    providers: t('nav.providersDescription'),
+    assets: t('nav.assetsDescription'),
+    builder: t('nav.builderDescription'),
+    history: t('nav.historyDescription'),
+    logs: t('nav.logsDescription')
+  };
 
   function notifyError(loadError, fallback = t('feedback.actionFailed')) {
     const text = String(loadError?.message || fallback || t('feedback.actionFailed'));
@@ -1976,6 +2013,11 @@ export default function App() {
     () => String(currentProviderConnectionSnapshot.message || '').trim(),
     [currentProviderConnectionSnapshot]
   );
+  const currentProviderDirty = Boolean(currentProvider?.id && hasDraftChanges(providerDraftsById, currentProvider.id));
+  const currentProfileDirty = Boolean(currentProfile?.id && hasDraftChanges(profileDraftsById, currentProfile.id));
+  const hasUnsavedDrafts = Object.values(providerDraftsById).some((entry) => entry?.isNew || entry?.dirtyFields?.length)
+    || Object.values(profileDraftsById).some((entry) => entry?.isNew || entry?.dirtyFields?.length);
+  const shellNavigationMode = getShellNavigationMode(viewportWidth);
   const currentHistoryListItem = useMemo(
     () => state?.historyExplorer?.items?.find((item) => item.id === selectedHistoryId) || null,
     [state, selectedHistoryId],
@@ -1989,6 +2031,14 @@ export default function App() {
     () => ((state?.dashboard?.notices) || []).filter((notice) => notice !== 'No mapping rule has been configured yet.'),
     [state]
   );
+  const dashboardChecklistItems = useMemo(
+    () => buildDashboardChecklist(state?.dashboard?.checklist || [], t),
+    [state?.dashboard?.checklist, t]
+  );
+  const dashboardRequiredSteps = dashboardChecklistItems.filter((item) => item?.optional !== true);
+  const dashboardCompletedSteps = dashboardRequiredSteps.filter((item) => item?.completed === true).length;
+  const dashboardJourneyComplete = dashboardRequiredSteps.length > 0
+    && dashboardCompletedSteps === dashboardRequiredSteps.length;
   const visibleHistoryItems = useMemo(
     () => filterHistoryItems(state?.historyExplorer?.items || [], historyFilters),
     [state, historyFilters]
@@ -2017,6 +2067,56 @@ export default function App() {
     setProviderModelSelection([]);
     setProviderModelSearch('');
   }, [currentProvider?.id]);
+
+  useEffect(() => {
+    writeShellState(globalThis.localStorage, {
+      activePage,
+      navCollapsed,
+      pageScrollPositions: pageScrollPositionsRef.current
+    });
+  }, [activePage, navCollapsed]);
+
+  useEffect(() => {
+    const targetScrollTop = getPageScrollPosition(pageScrollPositionsRef.current, activePage);
+    const frameId = globalThis.requestAnimationFrame?.(() => {
+      globalThis.scrollTo?.({ top: targetScrollTop, left: 0, behavior: 'auto' });
+    });
+    return () => globalThis.cancelAnimationFrame?.(frameId);
+  }, [activePage]);
+
+  useEffect(() => {
+    function handlePageHide() {
+      persistCurrentPageScrollPosition();
+    }
+    globalThis.addEventListener?.('pagehide', handlePageHide);
+    return () => globalThis.removeEventListener?.('pagehide', handlePageHide);
+  }, [activePage]);
+
+  useEffect(() => {
+    function handleResize() {
+      setViewportWidth(Number(globalThis.innerWidth || 1366));
+    }
+    globalThis.addEventListener?.('resize', handleResize);
+    return () => globalThis.removeEventListener?.('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (shellNavigationMode !== 'drawer') {
+      setMobileNavOpen(false);
+    }
+  }, [shellNavigationMode]);
+
+  useEffect(() => {
+    if (!hasUnsavedDrafts) {
+      return undefined;
+    }
+    function protectUnsavedDrafts(event) {
+      event.preventDefault();
+      event.returnValue = '';
+    }
+    globalThis.addEventListener?.('beforeunload', protectUnsavedDrafts);
+    return () => globalThis.removeEventListener?.('beforeunload', protectUnsavedDrafts);
+  }, [hasUnsavedDrafts]);
 
   function clearProviderTestState(providerEntryId) {
     const normalizedId = String(providerEntryId || '').trim();
@@ -2103,7 +2203,7 @@ export default function App() {
   }
 
   async function saveCurrentProfile() {
-    if (!currentProfile) return;
+    if (!currentProfile) return false;
     try {
       const selectedProvider = providerItems.find((provider) => (
         provider.id === getProfileProviderId(currentProfile) && isSelectableProfileProvider(provider)
@@ -2122,8 +2222,10 @@ export default function App() {
       setProfileDraftsById((current) => discardDraftEntry(current, currentProfile.id));
       message.success(t('feedback.actionSucceeded'));
       await refresh();
+      return true;
     } catch (saveError) {
       notifyError(saveError);
+      return false;
     }
   }
 
@@ -2310,7 +2412,7 @@ export default function App() {
   }
 
   async function saveCurrentProvider() {
-    if (!currentProvider || currentProviderConnectionMeta.color !== 'green') return;
+    if (!currentProvider || currentProviderConnectionMeta.color !== 'green') return false;
     setSavingProvider(true);
     try {
       const draftProviderId = isDraftProvider(currentProvider) ? currentProvider.id : '';
@@ -2337,8 +2439,10 @@ export default function App() {
       setProviderId(savedProvider.id);
       message.success(t('feedback.actionSucceeded'));
       await refresh();
+      return true;
     } catch (saveError) {
       notifyError(saveError);
+      return false;
     } finally {
       setSavingProvider(false);
     }
@@ -2623,6 +2727,61 @@ export default function App() {
     await refresh(nextFilters, { includeHistoryExplorer: true });
   }
 
+  function persistCurrentPageScrollPosition() {
+    const scrollTop = Math.max(0, Number(globalThis.scrollY || globalThis.pageYOffset || 0));
+    pageScrollPositionsRef.current = updatePageScrollPosition(pageScrollPositionsRef.current, activePage, scrollTop);
+    writeShellState(globalThis.localStorage, {
+      activePage,
+      navCollapsed: navCollapsedRef.current,
+      pageScrollPositions: pageScrollPositionsRef.current
+    });
+  }
+
+  function commitNavigation(navigation) {
+    if (!navigation) return;
+    if (navigation.kind === 'page') {
+      persistCurrentPageScrollPosition();
+      setActivePage(navigation.value);
+      return;
+    }
+    if (navigation.kind === 'provider') {
+      setProviderInsightFocus(null);
+      setProviderId(navigation.value);
+      return;
+    }
+    if (navigation.kind === 'profile') {
+      setProfileId(navigation.value);
+    }
+  }
+
+  function requestNavigation(kind, value) {
+    const isSameDestination = (kind === 'page' && value === activePage)
+      || (kind === 'provider' && value === currentProvider?.id)
+      || (kind === 'profile' && value === currentProfile?.id);
+    if (isSameDestination) return;
+
+    const dirtyKind = resolveDirtyNavigationKind({
+      activePage,
+      navigationKind: kind,
+      currentProviderDirty,
+      currentProfileDirty
+    });
+    const navigation = { kind, value, dirtyKind };
+    if (dirtyKind) {
+      setPendingNavigation(navigation);
+      return;
+    }
+    commitNavigation(navigation);
+  }
+
+  function requestPageNavigation(pageKey) {
+    requestNavigation('page', pageKey);
+  }
+
+  function selectProfile(profileEntryId = '') {
+    requestNavigation('profile', profileEntryId);
+  }
+
   function openInsightProvider(providerEntryId = '', focus = {}) {
     const normalizedProviderId = String(providerEntryId || '').trim();
     if (normalizedProviderId) {
@@ -2633,16 +2792,15 @@ export default function App() {
       ...(focus && typeof focus === 'object' ? focus : {}),
       providerId: normalizedProviderId
     });
-    setActivePage('providers');
+    requestPageNavigation('providers');
   }
 
   function selectProvider(providerEntryId = '') {
-    setProviderInsightFocus(null);
-    setProviderId(providerEntryId);
+    requestNavigation('provider', providerEntryId);
   }
 
   function returnFromProviderInsightFocus() {
-    setActivePage('history');
+    requestPageNavigation('history');
   }
 
   async function resetHistoryFilters() {
@@ -2786,7 +2944,7 @@ export default function App() {
     try {
       const created = await api.saveProfile(createBlankProfile());
       await refresh();
-      setProfileId(created.id);
+      requestNavigation('profile', created.id);
       message.success(t('feedback.profileCreatedFromPreset'));
     } catch (createError) {
       notifyError(createError);
@@ -2797,7 +2955,7 @@ export default function App() {
     try {
       const created = await api.saveProfile(createEmptyProfileDraft());
       await refresh();
-      setProfileId(created.id);
+      requestNavigation('profile', created.id);
       message.success(t('feedback.actionSucceeded'));
     } catch (createError) {
       notifyError(createError);
@@ -2841,7 +2999,7 @@ export default function App() {
           dirtyFields: ['name', 'type', 'baseUrl', 'requestPath', 'models', 'defaultModelId', 'enabled']
         })
       }));
-      setProviderId(nextProvider.id);
+      requestNavigation('provider', nextProvider.id);
       clearProviderTestState(nextProvider.id);
       message.success(t('providers.providerDraftCreated'));
     } catch (createError) {
@@ -2851,21 +3009,58 @@ export default function App() {
 
   function handleChecklistAction(key) {
     if (key === 'install-plugin') {
-      setActivePage('dashboard');
+      requestPageNavigation('dashboard');
       return;
     }
 
     if (key === 'provider-hub') {
-      setActivePage('providers');
+      requestPageNavigation('providers');
+      return;
+    }
+
+    if (key === 'asset-hub') {
+      requestPageNavigation('assets');
       return;
     }
 
     if (key === 'context-builder') {
-      setActivePage('builder');
+      requestPageNavigation('builder');
       return;
     }
 
-    setActivePage('history');
+    requestPageNavigation('history');
+  }
+
+  function stayOnDirtyEditor() {
+    setPendingNavigation(null);
+  }
+
+  function discardAndContinueNavigation() {
+    if (!pendingNavigation) return;
+    const navigation = pendingNavigation;
+    if (navigation.dirtyKind === 'provider') {
+      discardCurrentProviderChanges();
+    } else if (navigation.dirtyKind === 'profile') {
+      discardCurrentProfileChanges();
+    }
+    setPendingNavigation(null);
+    commitNavigation(navigation);
+  }
+
+  async function saveAndContinueNavigation() {
+    if (!pendingNavigation) return;
+    const navigation = pendingNavigation;
+    setNavigationResolving(true);
+    try {
+      const saved = navigation.dirtyKind === 'provider'
+        ? await saveCurrentProvider()
+        : await saveCurrentProfile();
+      if (!saved) return;
+      setPendingNavigation(null);
+      commitNavigation(navigation);
+    } finally {
+      setNavigationResolving(false);
+    }
   }
 
   async function deleteHistoryEntries(entryIds = []) {
@@ -3029,45 +3224,83 @@ export default function App() {
 
   return (
     <Layout className="app-shell">
-      <Sider
-        className={`app-sider ${navCollapsed ? 'app-sider-collapsed' : ''}`}
-        width={248}
-        collapsedWidth={72}
-        collapsed={navCollapsed}
-        trigger={null}
-        theme="light"
-        style={{ background: '#ffffff', borderRight: '1px solid #e5e5e5' }}
-      >
-        <div className={`brand-block ${navCollapsed ? 'brand-block-collapsed' : ''}`}>
-          <div className="brand-block-top">
-            {!navCollapsed ? <span /> : null}
-            <Tooltip title={navCollapsed ? t('common.expandSidebar') : t('common.collapseSidebar')}>
-              <Button
-                type="text"
-                className="app-nav-toggle"
-                icon={navCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-                aria-label={navCollapsed ? t('common.expandSidebar') : t('common.collapseSidebar')}
-                onClick={() => setNavCollapsed((current) => !current)}
-              />
-            </Tooltip>
+      {shellNavigationMode !== 'drawer' ? (
+        <Sider
+          className={`app-sider ${(shellNavigationMode === 'compact' || navCollapsed) ? 'app-sider-collapsed' : ''}`}
+          width={248}
+          collapsedWidth={72}
+          collapsed={shellNavigationMode === 'compact' || navCollapsed}
+          trigger={null}
+          theme="light"
+          style={{ background: '#ffffff', borderRight: '1px solid #e5e5e5' }}
+        >
+          <div className={`brand-block ${(shellNavigationMode === 'compact' || navCollapsed) ? 'brand-block-collapsed' : ''}`}>
+            <div className="brand-block-top">
+              {shellNavigationMode === 'expanded' && !navCollapsed ? <span /> : null}
+              {shellNavigationMode === 'expanded' ? (
+                <Tooltip title={navCollapsed ? t('common.expandSidebar') : t('common.collapseSidebar')}>
+                  <Button
+                    type="text"
+                    className="app-nav-toggle"
+                    icon={navCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                    aria-label={navCollapsed ? t('common.expandSidebar') : t('common.collapseSidebar')}
+                    onClick={() => setNavCollapsed((current) => !current)}
+                  />
+                </Tooltip>
+              ) : null}
+            </div>
           </div>
-        </div>
+          <Menu
+            className="app-nav-menu"
+            theme="light"
+            mode="inline"
+            inlineCollapsed={shellNavigationMode === 'compact' || navCollapsed}
+            selectedKeys={[activePage]}
+            items={navItems}
+            onClick={({ key }) => requestPageNavigation(key)}
+            style={{ background: 'transparent' }}
+          />
+        </Sider>
+      ) : null}
+      <Drawer
+        className="app-nav-drawer"
+        title={t('app.title')}
+        placement="left"
+        width="min(320px, calc(100vw - 32px))"
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+      >
         <Menu
           className="app-nav-menu"
           theme="light"
           mode="inline"
-          inlineCollapsed={navCollapsed}
           selectedKeys={[activePage]}
           items={navItems}
-          onClick={({ key }) => setActivePage(key)}
+          onClick={({ key }) => {
+            setMobileNavOpen(false);
+            requestPageNavigation(key);
+          }}
           style={{ background: 'transparent' }}
         />
-      </Sider>
+      </Drawer>
       <Layout>
         <Header className="app-header" style={{ background: 'rgba(255,255,255,0.94)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #e5e5e5' }}>
           <Space className="app-header-bar" style={{ width: '100%', justifyContent: 'space-between' }}>
             <Space className="app-header-title">
-              <Title level={3} style={{ margin: 0 }}>{t('app.title')}</Title>
+              {shellNavigationMode === 'drawer' ? (
+                <Button
+                  type="text"
+                  className="app-mobile-nav-trigger"
+                  icon={<MenuOutlined />}
+                  aria-label={t('common.openNavigation')}
+                  onClick={() => setMobileNavOpen(true)}
+                />
+              ) : null}
+              <div className="app-page-title-block">
+                <Text type="secondary" className="app-header-product">{t('app.title')}</Text>
+                <Title level={3} style={{ margin: 0 }}>{navPageItems.find((item) => item.key === activePage)?.title || t('nav.dashboard')}</Title>
+                <Text type="secondary" className="app-page-description">{pageDescriptions[activePage] || pageDescriptions.dashboard}</Text>
+              </div>
             </Space>
             <Space wrap className="app-header-controls">
               <Select
@@ -3097,16 +3330,42 @@ export default function App() {
 
           {activePage === 'dashboard' && (
             <Space direction="vertical" size={18} style={{ display: 'flex' }}>
-              <Row gutter={[16, 16]}>
-                {state.dashboard.checklist.map((item) => (
-                  <Col xs={24} sm={12} xl={6} key={item.key}>
-                    <Card className="page-card">
-                      <Statistic title={item.title} value={item.subtitle} valueStyle={{ fontSize: 18 }} />
-                      <Button type="link" style={{ paddingInline: 0 }} onClick={() => handleChecklistAction(item.key)}>{item.actionLabel}</Button>
-                    </Card>
-                  </Col>
+              <Card
+                className="page-card dashboard-journey-card"
+                title={(
+                  <div className="dashboard-journey-heading">
+                    <Text strong>{t('dashboard.setupJourneyTitle')}</Text>
+                    <Text type="secondary">{t('dashboard.setupJourneyDescription')}</Text>
+                  </div>
+                )}
+                extra={(
+                  <Tag color={dashboardJourneyComplete ? 'green' : 'blue'}>
+                    {t('dashboard.setupJourneyProgress', {
+                      completed: dashboardCompletedSteps,
+                      total: dashboardRequiredSteps.length
+                    })}
+                  </Tag>
+                )}
+              >
+                <div className="dashboard-journey-grid">
+                {dashboardChecklistItems.map((item) => (
+                  <div className={`dashboard-journey-step ${item.completed ? 'dashboard-journey-step-complete' : ''}`} key={item.key}>
+                    <div className="dashboard-journey-step-heading">
+                      <Text strong>{item.title}</Text>
+                      <Tag bordered={false} color={item.completed ? 'green' : item.optional ? 'blue' : undefined}>
+                        {item.completed
+                          ? t('dashboard.stepComplete')
+                          : item.optional
+                            ? t('dashboard.stepOptional')
+                            : t('dashboard.stepTodo')}
+                      </Tag>
+                    </div>
+                    <Text type="secondary">{item.subtitle}</Text>
+                    <Button type="link" className="dashboard-journey-action" onClick={() => handleChecklistAction(item.key)}>{item.actionLabel}</Button>
+                  </div>
                 ))}
-              </Row>
+                </div>
+              </Card>
               <Row gutter={[16, 16]}>
                 <Col xs={24} xl={12}>
                   <Card className="page-card" title={t('dashboard.runtimeStatus')}>
@@ -3206,8 +3465,14 @@ export default function App() {
                   </Card>
                 </Col>
               </Row>
-              <Card className="page-card" title={translateWithFallback(t, 'dashboard.updatesTitle', 'Updates')}>
-                <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+              <Collapse
+                className="dashboard-maintenance-collapse"
+                items={[{
+                  key: 'updates',
+                  label: <Text strong>{translateWithFallback(t, 'dashboard.updatesTitle', 'Updates')}</Text>,
+                  extra: <Tag>{updateStatusLabel}</Tag>,
+                  children: (
+                    <Space direction="vertical" size={16} style={{ display: 'flex' }}>
                   <Descriptions column={1}>
                     <Descriptions.Item label={translateWithFallback(t, 'dashboard.currentVersion', 'Current version')}><HoverText value={updateCenter.currentVersion} /></Descriptions.Item>
                     <Descriptions.Item label={translateWithFallback(t, 'dashboard.packagingMode', 'Packaging mode')}><HoverText value={packagingModeLabel} /></Descriptions.Item>
@@ -3268,8 +3533,10 @@ export default function App() {
                       </Button>
                     ) : null}
                   </Space>
-                </Space>
-              </Card>
+                    </Space>
+                  )
+                }]}
+              />
               <Card className="page-card" title={t('dashboard.notices')}>
                 {visibleDashboardNotices.length ? (
                   <List size="small" dataSource={visibleDashboardNotices} renderItem={(item) => <List.Item>{item}</List.Item>} />
@@ -3289,7 +3556,8 @@ export default function App() {
               assets={assets}
               supportedPlaceholders={supportedPlaceholders}
               templateIssues={currentProfileTemplateIssues}
-              onSelectProfile={setProfileId}
+              isDirty={currentProfileDirty}
+              onSelectProfile={selectProfile}
               onCreateBlankProfile={createEmptyProfile}
               onCreatePresetProfile={createNewProfile}
               onChangeProfile={patchCurrentProfile}
@@ -3332,6 +3600,7 @@ export default function App() {
               currentProviderConnectionStatus={currentProviderConnectionStatus}
               currentProviderHasPreviousTest={currentProviderHasPreviousTest}
               currentProviderTestMessage={currentProviderTestMessage}
+              isDirty={currentProviderDirty}
               savingProvider={savingProvider}
               testingProvider={testingProvider}
               discoveringProviderModels={discoveringProviderModels}
@@ -3499,6 +3768,12 @@ export default function App() {
                       </Space>
                     </Col>
                   </Row>
+                  <Collapse
+                    className="history-advanced-filters"
+                    items={[{
+                      key: 'advanced',
+                      label: t('history.advancedFilters'),
+                      children: (
                   <Row gutter={[12, 12]}>
                     <Col xs={24} sm={12} lg={8} xl={4}>
                       <Space direction="vertical" size={8} style={{ display: 'flex' }}>
@@ -3575,6 +3850,9 @@ export default function App() {
                       </Space>
                     </Col>
                   </Row>
+                      )
+                    }]}
+                  />
                   <Space wrap className="responsive-action-bar">
                     <Button type="primary" onClick={applyHistoryFilters}>{t('history.applyFilters')}</Button>
                     <Button onClick={resetHistoryFilters}>{t('history.resetFilters')}</Button>
@@ -3587,8 +3865,8 @@ export default function App() {
                   rowSelection={{ selectedRowKeys: selectedHistoryIds, onChange: setSelectedHistoryIds }}
                   dataSource={visibleHistoryItems}
                   onRow={(record) => ({
-                    onClick: () => setSelectedHistoryId(record.id),
-                    style: { cursor: 'pointer' }
+                    className: 'history-interactive-row',
+                    onClick: () => setSelectedHistoryId(record.id)
                   })}
                   columns={[
                     {
@@ -3629,8 +3907,19 @@ export default function App() {
                     },
                     {
                       title: t('common.actions'),
-                      width: 120,
+                      width: 180,
                       render: (_, record) => (
+                        <Space size={0}>
+                          <Button
+                            type="link"
+                            aria-label={t('history.openRecord', { id: record.requestId || record.id || '-' })}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedHistoryId(record.id);
+                            }}
+                          >
+                            {t('common.review')}
+                          </Button>
                         <Button
                           danger
                           type="link"
@@ -3650,6 +3939,7 @@ export default function App() {
                         >
                           {t('common.delete')}
                         </Button>
+                        </Space>
                       )
                     }
                   ]}
@@ -3659,6 +3949,40 @@ export default function App() {
           )}
         </Content>
       </Layout>
+
+      <Modal
+        title={t('navigation.unsavedTitle')}
+        open={Boolean(pendingNavigation)}
+        onCancel={stayOnDirtyEditor}
+        closable={!navigationResolving}
+        maskClosable={!navigationResolving}
+        footer={[
+          <Button key="stay" onClick={stayOnDirtyEditor} disabled={navigationResolving}>
+            {t('navigation.stay')}
+          </Button>,
+          <Button key="discard" danger onClick={discardAndContinueNavigation} disabled={navigationResolving}>
+            {t('navigation.discardAndContinue')}
+          </Button>,
+          <Button
+            key="save"
+            type="primary"
+            loading={navigationResolving}
+            disabled={pendingNavigation?.dirtyKind === 'provider' && currentProviderConnectionMeta.color !== 'green'}
+            onClick={() => void saveAndContinueNavigation()}
+          >
+            {t('navigation.saveAndContinue')}
+          </Button>
+        ]}
+      >
+        <Space direction="vertical" size={8}>
+          <Text>{t('navigation.unsavedDescription', {
+            name: pendingNavigation?.dirtyKind === 'provider' ? currentProvider?.name || '-' : currentProfile?.name || '-'
+          })}</Text>
+          {pendingNavigation?.dirtyKind === 'provider' && currentProviderConnectionMeta.color !== 'green' ? (
+            <Alert type="warning" showIcon message={t('navigation.providerMustTestBeforeSave')} />
+          ) : null}
+        </Space>
+      </Modal>
 
       <Drawer
         title={t('history.details')}
@@ -3712,6 +4036,13 @@ export default function App() {
                 );
               })()}
             </Card>
+            <Collapse
+              className="history-detail-disclosure"
+              items={[{
+                key: 'technical-details',
+                label: t('history.technicalDetails'),
+                children: (
+                  <Space direction="vertical" size={16} style={{ display: 'flex' }}>
             <Card size="small" title={t('history.attemptTimeline')}>
               <Table
                 size="small"
@@ -3898,6 +4229,10 @@ export default function App() {
                 )}
               />
             </Card>
+                  </Space>
+                )
+              }]}
+            />
           </Space>
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('history.noSelection')} />

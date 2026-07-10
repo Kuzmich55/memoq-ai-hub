@@ -23,3 +23,12 @@ test('forge packaging collects transitive runtime dependencies for discovered de
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
+
+test('forge packaging resolves hoisted ESM-only package roots without a CommonJS export', () => {
+  const packageDir = forgeConfig.__testables.resolvePackageDirectory('xml-naming');
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8')
+  );
+
+  assert.equal(packageJson.name, 'xml-naming');
+});

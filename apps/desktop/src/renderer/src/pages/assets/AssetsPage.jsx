@@ -4,20 +4,14 @@ import {
   Card,
   Dropdown,
   Empty,
+  Input,
   List,
-  Row,
-  Col,
+  Segmented,
   Space,
   Tag,
   Typography
 } from 'antd';
 import { useMemo, useState } from 'react';
-import {
-  buildCollapsiblePanelEntries,
-  getPanelColumnSpan,
-  getPanelContentSpan
-} from '../../appShell.mjs';
-import { CollapsibleItemList, CollapsibleSidePanel, ProfileListRow } from '../../components/CollapsibleSidePanel';
 import { useI18n } from '../../i18n';
 
 const { Text } = Typography;
@@ -27,70 +21,6 @@ const ASSET_CATEGORIES = [
   { id: 'glossary', assetType: 'glossary', translationKey: 'context.assetType.glossary' },
   { id: 'custom_tm', assetType: 'custom_tm', translationKey: 'context.assetType.custom_tm' }
 ];
-
-function AssetCategoryPanel({
-  assets,
-  currentCategoryId,
-  onSelectCategory,
-  onImportAsset,
-  collapsed,
-  onToggleCollapsed,
-  expandLabel,
-  collapseLabel
-}) {
-  const { t } = useI18n();
-  const addAssetMenu = {
-    items: [
-      { key: 'glossary', label: t('context.uploadGlossary') },
-      { key: 'custom_tm', label: t('context.uploadCustomTm') }
-    ],
-    onClick: ({ key }) => onImportAsset?.(key)
-  };
-  const entries = buildCollapsiblePanelEntries(ASSET_CATEGORIES, {
-    selectedId: currentCategoryId,
-    emptyLabel: t('context.assetCategoryAll'),
-    getLabel: (category) => t(category.translationKey),
-    getTags: (category) => {
-      const count = category.assetType
-        ? assets.filter((asset) => asset?.type === category.assetType).length
-        : assets.length;
-      return [{ key: `${category.id}-count`, label: String(count), color: 'blue' }];
-    }
-  });
-
-  return (
-    <CollapsibleSidePanel
-      title={t('context.assetLibraryTitle')}
-      collapsed={collapsed}
-      onToggle={onToggleCollapsed}
-      expandLabel={expandLabel}
-      collapseLabel={collapseLabel}
-      extra={(
-        <Dropdown
-          menu={addAssetMenu}
-          trigger={['click']}
-        >
-          <Button icon={<PlusOutlined />}>{t('common.add')}</Button>
-        </Dropdown>
-      )}
-      collapsedExtra={(
-        <Dropdown menu={addAssetMenu} trigger={['click']}>
-          <Button icon={<PlusOutlined />} aria-label={t('common.add')} />
-        </Dropdown>
-      )}
-    >
-      <CollapsibleItemList
-        entries={entries}
-        collapsed={collapsed}
-        emptyText={t('context.noAssets')}
-        onSelect={onSelectCategory}
-        renderExpandedItem={(entry, { compact }) => (
-          <ProfileListRow entry={entry} compact={compact} onClick={() => onSelectCategory(entry.id)} />
-        )}
-      />
-    </CollapsibleSidePanel>
-  );
-}
 
 function buildAssetUsageMap(profileItems = [], fallbackLabel = '-') {
   return profileItems.reduce((usageMap, profile) => {
@@ -111,33 +41,53 @@ export default function AssetsPage({
   onPreviewAsset
 }) {
   const { t } = useI18n();
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [assetCategoryId, setAssetCategoryId] = useState('all');
+  const [assetSearch, setAssetSearch] = useState('');
   const assetUsage = buildAssetUsageMap(profileItems, t('context.unnamedProfile'));
-  const visibleAssets = useMemo(() => (
-    assetCategoryId === 'all'
-      ? assets
-      : assets.filter((asset) => asset?.type === assetCategoryId)
-  ), [assetCategoryId, assets]);
+  const normalizedSearch = assetSearch.trim().toLowerCase();
+  const visibleAssets = useMemo(() => assets.filter((asset) => {
+    const matchesCategory = assetCategoryId === 'all' || asset?.type === assetCategoryId;
+    const matchesSearch = !normalizedSearch || [asset?.name, asset?.type]
+      .some((value) => String(value || '').toLowerCase().includes(normalizedSearch));
+    return matchesCategory && matchesSearch;
+  }), [assetCategoryId, assets, normalizedSearch]);
+  const categoryOptions = ASSET_CATEGORIES.map((category) => ({
+    value: category.id,
+    label: `${t(category.translationKey)} (${category.assetType ? assets.filter((asset) => asset?.type === category.assetType).length : assets.length})`
+  }));
+  const addAssetMenu = {
+    items: [
+      { key: 'glossary', label: t('context.uploadGlossary') },
+      { key: 'custom_tm', label: t('context.uploadCustomTm') }
+    ],
+    onClick: ({ key }) => onImportAsset?.(key)
+  };
 
   return (
     <Space direction="vertical" size={18} style={{ display: 'flex' }}>
-      <Row gutter={16} align="top">
-        <Col xs={24} xl={getPanelColumnSpan(sidebarCollapsed)}>
-          <AssetCategoryPanel
-            assets={assets}
-            currentCategoryId={assetCategoryId}
-            onSelectCategory={setAssetCategoryId}
-            onImportAsset={onImportAsset}
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
-            expandLabel={t('common.expandSidebar')}
-            collapseLabel={t('common.collapseSidebar')}
-          />
-        </Col>
-        <Col xs={24} xl={getPanelContentSpan(sidebarCollapsed)}>
-          <Card className="page-card">
+      <Card
+        className="page-card"
+        title={t('context.assetLibraryTitle')}
+        extra={(
+          <Dropdown menu={addAssetMenu} trigger={['click']}>
+            <Button type="primary" icon={<PlusOutlined />}>{t('common.add')}</Button>
+          </Dropdown>
+        )}
+      >
             <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+              <div className="asset-library-toolbar">
+                <Segmented
+                  options={categoryOptions}
+                  value={assetCategoryId}
+                  onChange={setAssetCategoryId}
+                />
+                <Input.Search
+                  allowClear
+                  value={assetSearch}
+                  onChange={(event) => setAssetSearch(event.target.value)}
+                  placeholder={t('context.assetSearchPlaceholder')}
+                />
+              </div>
               <Text type="secondary">{t('context.assetLibraryHint')}</Text>
               <Text type="secondary">
                 {t('context.assetAllowedExtensions', {
@@ -189,9 +139,7 @@ export default function AssetsPage({
                 />
               )}
             </Space>
-          </Card>
-        </Col>
-      </Row>
+      </Card>
     </Space>
   );
 }

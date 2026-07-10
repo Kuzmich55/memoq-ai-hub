@@ -69,10 +69,11 @@ function buildPlaceholderAppState() {
     startup: { ...startupState },
     dashboard: {
       checklist: [
-        { key: 'install-plugin', title: '1. Install plugin', subtitle: integration.status === 'installed' ? 'dll installed' : 'dll not installed', actionLabel: 'Install' },
-        { key: 'provider-hub', title: '2. Configure provider', subtitle: 'No provider yet', actionLabel: 'Configure' },
-        { key: 'context-builder', title: '3. Build context', subtitle: 'No profile yet', actionLabel: 'Build' },
-        { key: 'history', title: '4. Verify run', subtitle: 'No history yet', actionLabel: 'Review' }
+        { key: 'install-plugin', title: '1. Install integration', subtitle: integration.status === 'installed' ? 'Integration ready' : 'Integration not installed', actionLabel: 'Install or repair', completed: integration.status === 'installed', count: integration.status === 'installed' ? 1 : 0 },
+        { key: 'provider-hub', title: '2. Connect AI service', subtitle: 'No AI service yet', actionLabel: 'Connect', completed: false, count: 0 },
+        { key: 'asset-hub', title: '3. Add optional assets', subtitle: 'Optional — no assets uploaded', actionLabel: 'Add assets', completed: false, optional: true, count: 0 },
+        { key: 'context-builder', title: '4. Create profile', subtitle: 'No profile yet', actionLabel: 'Create', completed: false, count: 0 },
+        { key: 'history', title: '5. Review a run', subtitle: 'No translation records yet', actionLabel: 'Review', completed: false, count: 0 }
       ],
       runtimeStatus: {
         memoqInstallPath: integration.selectedInstallDir || integration.installations[0]?.rootDir || 'Not detected',
