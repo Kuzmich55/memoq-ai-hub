@@ -29,7 +29,6 @@ native/preview-helper/**/preview-helper/
 .vs/
 *.user
 *.suo
-pnpm-lock.yaml
 .env
 .claude/
 .codex/

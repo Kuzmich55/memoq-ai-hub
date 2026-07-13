@@ -136,7 +136,7 @@ Write-Step "Preparing packaged desktop resources"
 Write-Step "Installing workspace dependencies"
 Push-Location $repoRoot
 try {
-    Invoke-NativeStep "pnpm install" { pnpm install }
+    Invoke-NativeStep "pnpm install --frozen-lockfile" { pnpm install --frozen-lockfile }
 } finally {
     Pop-Location
 }

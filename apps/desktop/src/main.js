@@ -13,6 +13,7 @@ const { DEFAULT_HOST, DEFAULT_PORT, PRODUCT_NAME, CONTRACT_VERSION } = require('
 const { getAssetImportRules } = require('./asset/assetRules');
 const { getSupportedPlaceholders } = require('./shared/promptTemplate');
 const { readDesktopPackageMetadata } = require('./shared/desktopMetadata');
+const { normalizeExternalHttpsUrl } = require('./shared/externalNavigation');
 
 const appPaths = createAppPaths();
 const logger = createLogger({ source: 'desktop-main', logsDir: appPaths.logsDir });
@@ -564,10 +565,11 @@ function registerIpcHandlers() {
     return { ok: true, revealed: true, targetPath: normalizedPath };
   });
   ipcMain.handle('desktop:open-external-url', async (_event, url) => {
-    const normalizedUrl = String(url || '').trim();
-    if (!normalizedUrl) {
+    const requestedUrl = String(url || '').trim();
+    if (!requestedUrl) {
       return { ok: false, opened: false };
     }
+    const normalizedUrl = normalizeExternalHttpsUrl(requestedUrl);
     await shell.openExternal(normalizedUrl);
     return { ok: true, opened: true, url: normalizedUrl };
   });

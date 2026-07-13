@@ -16,3 +16,10 @@ test('main process registers log diagnostics IPC handlers', () => {
   assert.match(source, /desktop:prune-logs/);
   assert.match(source, /desktop:record-renderer-log/);
 });
+
+test('main process validates external URLs before invoking the operating system', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/main.js'), 'utf8');
+  assert.match(source, /normalizeExternalHttpsUrl\(requestedUrl\)/);
+  assert.match(source, /shell\.openExternal\(normalizedUrl\)/);
+  assert.doesNotMatch(source, /shell\.openExternal\(requestedUrl\)/);
+});

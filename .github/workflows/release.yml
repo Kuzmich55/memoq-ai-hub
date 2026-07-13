@@ -28,7 +28,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: apps/desktop/package.json
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v5
@@ -36,7 +36,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Install workspace dependencies
-        run: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Resolve release version
         id: release_meta

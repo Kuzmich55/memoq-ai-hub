@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const {
+  normalizeExternalHttpsUrl,
+  normalizeUpdateArtifactName
+} = require('../shared/externalNavigation');
 
 const execFileAsync = promisify(execFile);
 
@@ -82,6 +86,12 @@ function normalizePersistedUpdateState(defaultState, persistedState = {}) {
     ...defaultState,
     ...(persistedState && typeof persistedState === 'object' ? persistedState : {})
   };
+  nextState.releaseNotesUrl = normalizePersistedExternalUrl(nextState.releaseNotesUrl, 'Release notes URL');
+  nextState.portableDownloadUrl = normalizePersistedExternalUrl(nextState.portableDownloadUrl, 'Portable download URL');
+  nextState.availableAssets = {
+    portable: normalizePersistedAsset(nextState.availableAssets?.portable),
+    installer: normalizePersistedAsset(nextState.availableAssets?.installer)
+  };
 
   const persistedCurrentVersion = String(persistedState?.currentVersion || '').trim();
   const persistedManifestUrl = String(persistedState?.manifestUrl || '').trim();
@@ -154,11 +164,14 @@ function normalizeAsset(asset = {}) {
     return null;
   }
 
-  const name = String(asset.name || '').trim();
-  const url = String(asset.url || '').trim();
-  if (!name || !url) {
+  const rawName = String(asset.name || '').trim();
+  const rawUrl = String(asset.url || '').trim();
+  if (!rawName || !rawUrl) {
     return null;
   }
+
+  const name = normalizeUpdateArtifactName(rawName);
+  const url = normalizeExternalHttpsUrl(rawUrl, { label: 'Update asset URL' });
 
   return {
     name,
@@ -166,6 +179,22 @@ function normalizeAsset(asset = {}) {
     contentType: String(asset.contentType || '').trim(),
     size: Number.isFinite(Number(asset.size)) ? Number(asset.size) : null
   };
+}
+
+function normalizePersistedExternalUrl(value, label) {
+  try {
+    return normalizeExternalHttpsUrl(value, { label, allowEmpty: true });
+  } catch {
+    return '';
+  }
+}
+
+function normalizePersistedAsset(asset) {
+  try {
+    return normalizeAsset(asset);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeManifest(manifest = {}) {
@@ -180,7 +209,10 @@ function normalizeManifest(manifest = {}) {
     channel: String(manifest.channel || STABLE_RELEASE_CHANNEL).trim() || STABLE_RELEASE_CHANNEL,
     publishedAt: String(manifest.publishedAt || '').trim(),
     releaseNotes: String(manifest.releaseNotes || '').trim(),
-    releaseNotesUrl: String(manifest.releaseNotesUrl || '').trim(),
+    releaseNotesUrl: normalizeExternalHttpsUrl(manifest.releaseNotesUrl, {
+      label: 'Release notes URL',
+      allowEmpty: true
+    }),
     assets: {
       portable: normalizeAsset(manifest.assets?.portable),
       installer: normalizeAsset(manifest.assets?.installer)
@@ -244,7 +276,10 @@ function createUpdateService(options = {}) {
     : DEFAULT_MANIFEST_TIMEOUT_MS;
   const nowIso = typeof options.nowIso === 'function' ? options.nowIso : () => new Date().toISOString();
   const repository = String(options.releaseRepository || DEFAULT_RELEASE_REPOSITORY).trim() || DEFAULT_RELEASE_REPOSITORY;
-  const manifestUrl = String(options.manifestUrl || getDefaultManifestUrl(repository)).trim();
+  const manifestUrl = normalizeExternalHttpsUrl(
+    options.manifestUrl || getDefaultManifestUrl(repository),
+    { label: 'Update manifest URL' }
+  );
   const currentVersion = String(options.currentVersion || '').trim();
   const packagingMode = resolvePackagingMode({
     packagingMode: options.packagingMode,
@@ -366,6 +401,9 @@ function createUpdateService(options = {}) {
     if (!response || response.ok !== true) {
       throw new Error(`Update manifest request failed with status ${response?.status || 'unknown'}.`);
     }
+    if (response.url) {
+      normalizeExternalHttpsUrl(response.url, { label: 'Final update manifest URL' });
+    }
 
     return normalizeManifest(await response.json());
   }
@@ -392,6 +430,9 @@ function createUpdateService(options = {}) {
     const response = await fetchImpl(asset.url);
     if (!response || response.ok !== true) {
       throw new Error(`Update download failed with status ${response?.status || 'unknown'}.`);
+    }
+    if (response.url) {
+      normalizeExternalHttpsUrl(response.url, { label: 'Final update download URL' });
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());

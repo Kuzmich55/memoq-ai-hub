@@ -79,6 +79,35 @@ test('gitignore protects generated outputs and local scratch paths', () => {
   for (const entry of requiredEntries) {
     assert.match(gitignore, new RegExp(`^${entry.replaceAll('/', '\\/').replaceAll('*', '\\*')}$`, 'm'));
   }
+
+  assert.doesNotMatch(gitignore, /^pnpm-lock\.yaml$/m);
+});
+
+test('dependency and CI governance is reproducible', () => {
+  const rootPackage = JSON.parse(readFile('package.json'));
+  const lockfile = readFile('pnpm-lock.yaml');
+  const ciWorkflow = readFile('.github/workflows/ci.yml');
+  const releaseWorkflow = readFile('.github/workflows/release.yml');
+  const packageWindowsScript = readFile('tooling/scripts/package-windows.ps1');
+
+  assert.deepEqual(rootPackage.pnpm?.onlyBuiltDependencies, [
+    'electron',
+    'electron-winstaller',
+    'esbuild',
+  ]);
+  assert.match(lockfile, /^lockfileVersion: '9\.0'$/m);
+  assert.match(lockfile, /^  apps\/desktop:$/m);
+
+  for (const workflow of [ciWorkflow, releaseWorkflow]) {
+    assert.match(workflow, /cache-dependency-path: pnpm-lock\.yaml/);
+    assert.match(workflow, /pnpm install --frozen-lockfile/);
+    assert.doesNotMatch(workflow, /cache-dependency-path: apps\/desktop\/package\.json/);
+  }
+
+  assert.match(ciWorkflow, /^permissions:\n  contents: read$/m);
+  assert.match(ciWorkflow, /pnpm run test:repo/);
+  assert.match(packageWindowsScript, /pnpm install --frozen-lockfile/);
+  assert.doesNotMatch(packageWindowsScript, /Invoke-NativeStep "pnpm install" \{ pnpm install \}/);
 });
 
 test('README points contributors to docs-based structure guidance', () => {
@@ -99,7 +128,7 @@ test('path-sensitive entrypoints use the monorepo topology', () => {
   const desktopContract = readFile('apps/desktop/src/shared/desktopContract.js');
   const integrationService = readFile('apps/desktop/src/integration/integrationService.js');
 
-  assert.match(ciWorkflow, /apps\/desktop\/package\.json/);
+  assert.match(ciWorkflow, /pnpm-lock\.yaml/);
   assert.match(ciWorkflow, /tooling\/scripts\/build-windows\.ps1/);
   assert.match(ciWorkflow, /tooling\/build\/prepare-desktop-release\.ps1/);
   assert.match(ciWorkflow, /apps\/desktop\/out\/\*\*\/\*\.zip/);
@@ -141,4 +170,3 @@ test('release note bodies omit top-level titles because the release page already
     assert.match(content, /^##\s+/m, `expected section headings in ${fileName}`);
   }
 });
-

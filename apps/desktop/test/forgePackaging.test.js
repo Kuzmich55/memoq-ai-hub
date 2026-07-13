@@ -25,12 +25,33 @@ test('forge packaging collects transitive runtime dependencies for discovered de
 });
 
 test('forge packaging resolves hoisted ESM-only package roots without a CommonJS export', () => {
-  const packageDir = forgeConfig.__testables.resolvePackageDirectory('xml-naming');
-  const packageJson = JSON.parse(
-    fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8')
-  );
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'memoq-esm-package-'));
+  const packageName = 'memoq-esm-only-fixture';
+  const fixtureDir = path.join(tempRoot, 'node_modules', packageName);
 
-  assert.equal(packageJson.name, 'xml-naming');
+  try {
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    fs.writeFileSync(path.join(fixtureDir, 'package.json'), JSON.stringify({
+      name: packageName,
+      version: '1.0.0',
+      type: 'module',
+      exports: './index.js'
+    }), 'utf8');
+    fs.writeFileSync(path.join(fixtureDir, 'index.js'), 'export default true;\n', 'utf8');
+
+    const packageDir = forgeConfig.__testables.resolvePackageDirectory(packageName, {
+      nodeModulesPaths: [],
+      resolutionPaths: [tempRoot]
+    });
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(packageDir, 'package.json'), 'utf8')
+    );
+
+    assert.equal(packageJson.name, packageName);
+    assert.equal(fs.realpathSync(packageDir), fs.realpathSync(fixtureDir));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('forge packaging treats bundled parser entrypoints as self-contained', () => {

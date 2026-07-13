@@ -7,7 +7,9 @@ const test = require('node:test');
 const {
   compareVersions,
   createUpdateService,
+  normalizeManifest,
   PORTABLE_IN_APP_UPDATE_DISABLED_MESSAGE,
+  UPDATE_CHECK_FAILED_CODE,
   UPDATE_CHECK_TIMEOUT_CODE,
   UPDATE_CHECK_TIMEOUT_MESSAGE,
   resolvePackagingMode
@@ -42,6 +44,7 @@ function createMockFetch(responses = new Map(), calls = []) {
     return {
       ok: response.ok !== false,
       status: response.status || 200,
+      url: response.url || key,
       async json() {
         return response.json || {};
       },
@@ -72,6 +75,103 @@ test('update service compares semantic versions numerically', () => {
   assert.equal(compareVersions('1.0.10', '1.0.2'), 1);
   assert.equal(compareVersions('1.0.2', '1.0.10'), -1);
   assert.equal(compareVersions('1.0.3', '1.0.3'), 0);
+});
+
+test('update service rejects unsafe manifest navigation and artifact fields', () => {
+  assert.throws(() => createUpdateService({
+    manifestUrl: 'http://example.com/latest.json'
+  }), /Update manifest URL must use HTTPS/);
+
+  assert.throws(() => normalizeManifest({
+    version: '1.0.1',
+    releaseNotesUrl: 'file:///C:/Windows/System32/calc.exe'
+  }), /Release notes URL must use HTTPS/);
+
+  assert.throws(() => normalizeManifest({
+    version: '1.0.1',
+    assets: {
+      installer: {
+        name: '../memoQ-AI-Hub-Setup.exe',
+        url: 'https://example.com/memoQ-AI-Hub-Setup.exe'
+      }
+    }
+  }), /plain file name/);
+
+  assert.throws(() => normalizeManifest({
+    version: '1.0.1',
+    assets: {
+      installer: {
+        name: 'memoQ-AI-Hub-Setup.exe',
+        url: 'http://example.com/memoQ-AI-Hub-Setup.exe'
+      }
+    }
+  }), /Update asset URL must use HTTPS/);
+});
+
+test('update service rejects an HTTPS manifest request redirected to an unsafe final URL', async () => {
+  const tempRoot = createTempRoot();
+  try {
+    const paths = createAppPaths({ appDataRoot: tempRoot });
+    const manifestUrl = 'https://example.com/latest.json';
+    const service = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'portable',
+      fetch: createMockFetch(new Map([
+        [manifestUrl, {
+          url: 'http://example.com/latest.json',
+          json: { version: '1.0.1' }
+        }]
+      ]))
+    });
+
+    const status = await service.checkForUpdates({ manual: true });
+
+    assert.equal(status.updateStatus, 'error');
+    assert.equal(status.lastErrorCode, UPDATE_CHECK_FAILED_CODE);
+    assert.equal(status.availableAssets.portable, null);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('update service clears unsafe URLs from persisted state', () => {
+  const tempRoot = createTempRoot();
+  try {
+    const paths = createAppPaths({ appDataRoot: tempRoot });
+    const manifestUrl = 'https://example.com/latest.json';
+    fs.writeFileSync(paths.updateStatePath, JSON.stringify({
+      currentVersion: '1.0.0',
+      packagingMode: 'portable',
+      manifestUrl,
+      updateStatus: 'available',
+      latestVersion: '1.0.1',
+      releaseNotesUrl: 'file:///C:/Windows/System32/calc.exe',
+      portableDownloadUrl: 'http://example.com/release',
+      availableAssets: {
+        portable: {
+          name: '../memoq-ai-hub-win32-x64.zip',
+          url: 'https://example.com/memoq-ai-hub-win32-x64.zip'
+        }
+      }
+    }), 'utf8');
+
+    const service = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'portable',
+      fetch: createMockFetch()
+    });
+    const status = service.getStatus();
+
+    assert.equal(status.releaseNotesUrl, '');
+    assert.equal(status.portableDownloadUrl, '');
+    assert.equal(status.availableAssets.portable, null);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('update service resolves installed packaging when Update.exe is present', () => {
@@ -335,6 +435,50 @@ test('update service downloads installer assets only in installed mode', async (
     assert.equal(downloaded.packagingMode, 'installed');
     assert.equal(path.basename(downloaded.downloadedArtifactPath), 'memoQ-AI-Hub-Setup.exe');
     assert.equal(fs.existsSync(downloaded.downloadedArtifactPath), true);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('update service rejects an asset download redirected to an unsafe final URL', async () => {
+  const tempRoot = createTempRoot();
+  try {
+    const paths = createAppPaths({ appDataRoot: tempRoot });
+    const manifestUrl = 'https://example.com/latest.json';
+    const installerUrl = 'https://example.com/memoQ-AI-Hub-Setup.exe';
+    const service = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'installed',
+      fetch: createMockFetch(new Map([
+        [manifestUrl, {
+          json: {
+            version: '1.0.2',
+            assets: {
+              installer: {
+                name: 'memoQ-AI-Hub-Setup.exe',
+                url: installerUrl
+              }
+            }
+          }
+        }],
+        [installerUrl, {
+          url: 'http://example.com/memoQ-AI-Hub-Setup.exe',
+          buffer: 'installer binary'
+        }]
+      ]))
+    });
+
+    await service.checkForUpdates({ manual: true });
+    await assert.rejects(
+      () => service.downloadInstallerUpdate(),
+      /Final update download URL must use HTTPS/
+    );
+    assert.equal(
+      fs.existsSync(path.join(paths.updateDownloadsDir, 'memoQ-AI-Hub-Setup.exe')),
+      false
+    );
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }

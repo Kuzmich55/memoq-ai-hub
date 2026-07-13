@@ -113,12 +113,17 @@ function findRuntimePackageNames(buildPath) {
   return Array.from(packageNames).sort();
 }
 
-function resolvePackageDirectory(packageName) {
-  const nodeModulesPaths = new Set([
+function resolvePackageDirectory(packageName, options = {}) {
+  const defaultNodeModulesPaths = [
     sourceNodeModulesPath,
     desktopNodeModulesPath,
     workspaceNodeModulesPath
-  ]);
+  ];
+  const nodeModulesPaths = new Set(
+    Array.isArray(options.nodeModulesPaths)
+      ? options.nodeModulesPaths
+      : defaultNodeModulesPaths
+  );
   for (const nodeModulesPath of nodeModulesPaths) {
     const directPackagePath = path.join(nodeModulesPath, packageName);
     if (fs.existsSync(directPackagePath)) {
@@ -126,7 +131,9 @@ function resolvePackageDirectory(packageName) {
     }
   }
 
-  const resolutionPaths = [__dirname, sourceNodeModulesPath, workspaceNodeModulesPath];
+  const resolutionPaths = Array.isArray(options.resolutionPaths)
+    ? options.resolutionPaths
+    : [__dirname, sourceNodeModulesPath, workspaceNodeModulesPath];
 
   try {
     const resolvedPackageJsonPath = buildRequire.resolve(`${packageName}/package.json`, {
