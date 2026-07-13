@@ -4,11 +4,13 @@
 
 The repository has a sound product boundary: the native memoQ plugin is thin, the Electron worker owns AI/runtime behavior, shared wire metadata is centralized, and the current architecture/performance initiative has measurable acceptance evidence. The highest-return work is therefore not another broad refactor. It is tightening reproducibility, test isolation, and local desktop trust boundaries.
 
-This audit selects and implements three implementation slices:
+This audit selected and implemented three initial implementation slices:
 
 1. Track the pnpm lockfile, explicitly allow the required Electron/esbuild install scripts, and make CI/release installs frozen; run repository tests in CI and apply least-privilege CI permissions.
 2. Remove the packaging regression test's dependency on an undeclared, stale transitive package.
 3. Enforce a loopback-only gateway host, validate the gateway port, restrict external navigation/update URLs to HTTPS, and reject unsafe update artifact names.
+
+The `v1.0.25` follow-up implements the remaining P1 item U1: release-generated SHA-256 metadata plus fail-closed verification of application-managed installer bytes before persistence and again immediately before launch.
 
 No browser or external web source was used. “Industry practice” comparisons are stable engineering principles applied to the current code, while memoQ capability conclusions use only the bundled official SDK material under `docs/reference/`.
 
@@ -94,7 +96,7 @@ The bundled MT, QA, and Preview documentation exposes no public TBX/term-base AP
 | R1 | Add bounded main-to-worker request timeouts and cancellation cleanup | P2 | 4 | 4 | 3 | 5.3 | Backlog |
 | S2 | Make standalone secret-storage mode explicit and fail closed when OS encryption is unavailable | P2 | 4 | 4 | 3 | 5.3 | Backlog |
 | Q2 | Add lint/static analysis without weakening existing tests | P2 | 3 | 5 | 3 | 5.0 | Backlog |
-| U1 | Add release-manifest SHA-256/signature metadata and verify installer bytes before launch | P1 | 5 | 4 | 4 | 5.0 | Separate contract change |
+| U1 | Add release-manifest SHA-256 metadata and verify installer bytes before launch | P1 | 5 | 4 | 4 | 5.0 | Implemented + verified for v1.0.25 |
 | M1 | Incrementally decompose `App.jsx` and `runtime.js` by feature/lifecycle boundary | P2 | 4 | 5 | 5 | 4.0 | Backlog |
 | N1 | Record provenance/hashes for checked-in memoQ/native binary references and enforce release signing | P2 | 5 | 3 | 4 | 3.8 | Backlog |
 | A1 | Normalize malformed JSON/body-limit failures into the gateway's stable JSON error contract | P3 | 2 | 4 | 2 | 4.0 | Backlog |
@@ -146,7 +148,9 @@ Industry-practice target:
 
 ### U1 — Update authenticity and integrity
 
-The stable manifest contains names and URLs but no digest/signature. HTTPS protects transport, but byte-level verification before an installer launch is still the stronger release contract. This is P1 by impact but is not included in this pass because it changes the release metadata schema, packaging scripts, publication workflow, update state, and rollback behavior together. It should be a dedicated Spec Kit slice.
+The stable manifest now contains lowercase SHA-256 digests for the ZIP and 7z produced by the same packaging run. Packaging fails if either artifact is absent, application-managed installer downloads require a valid digest and verify the response before writing it, and launch re-verifies the managed path and bytes before `shell.openPath`.
+
+Older digest-free manifests remain readable for version checks and portable browser navigation, but they cannot authorize an application-managed installer download. SHA-256 is anchored to the HTTPS-delivered manifest; it detects byte substitution relative to that manifest but does not replace asymmetric manifest signing or platform code signing. Those stronger provenance controls remain under N1.
 
 ### R1 — Unbounded worker IPC
 
@@ -169,6 +173,10 @@ The large runtime/renderer files and 93 catch sites increase review cost. Existi
 5. Non-loopback gateway hosts and invalid ports are rejected deterministically.
 6. External/update URLs and final redirect targets reject non-HTTPS and credential-bearing URLs; artifact names reject traversal, path separators, trailing dot/space, and Windows-reserved device names.
 7. Targeted tests, all desktop tests, repository tests, production renderer build, and native plugin regression/build gates pass.
+8. Stable release metadata contains valid SHA-256 digests calculated from the packaged ZIP and 7z, and packaging fails when either artifact is missing.
+9. Existing digest-free manifests remain compatible with version checks and portable browser navigation; malformed non-empty digests are rejected.
+10. Application-managed installer downloads fail closed when the digest is absent or mismatched and do not persist unverified bytes.
+11. Installer launch accepts only the current managed download path and re-verifies its bytes immediately before the operating-system launch call.
 
 ## Implemented Changes
 
@@ -194,31 +202,41 @@ The large runtime/renderer files and 93 catch sites increase review cost. Existi
 - Rejected update artifact traversal, path separators, invalid Windows filename characters, trailing dot/space, overlong names, and Windows-reserved device names.
 - Sanitized unsafe persisted update URLs/assets rather than re-exposing stale values after upgrade.
 
+### U1 — Release and installer byte-integrity contract
+
+- Added SHA-256 fields for both portable artifacts to the stable update manifest and made the release generator hash the actual sibling ZIP and 7z files.
+- Preserved digest-free manifests for version checks and browser-based portable downloads while rejecting malformed non-empty digest fields.
+- Required valid SHA-256 metadata for application-managed installer downloads, verified response bytes before writing, and removed managed artifacts after integrity failures.
+- Added a worker-owned launch gate that validates the current managed path and re-hashes the persisted installer before the main process calls `shell.openPath`.
+- Added focused manifest, persistence, mismatch, missing-digest, tamper, and launch-order regression coverage.
+
 ## Verification Matrix
 
 | Acceptance area | Fresh verification | Result |
 | --- | --- | --- |
 | Locked install | pnpm 10.6.2 `install --offline --frozen-lockfile`; SHA-256 before/after | Passed; lock hash unchanged; Electron/esbuild binaries present; no pending builds |
-| Focused trust-boundary regression | `node --test` for `externalNavigation`, `updateService`, `preloadSurface`, and `desktopContract` | 21 passed, 0 failed, 0 skipped |
-| Full desktop regression | `node --test test/*.test.js test/*.test.mjs` | 413 total; 408 passed, 0 failed, 5 skipped |
-| Repository governance | `node --test tests/repo/*.test.mjs` | 16 passed, 0 failed |
+| Focused v1.0.25 integrity/release regression | Release metadata plus update service/main-process verification suites | 30 passed, 0 failed, 0 skipped |
+| Full desktop regression | `node --test test/*.test.js test/*.test.mjs` | 417 total; 412 passed, 0 failed, 5 skipped |
+| Repository governance | `node --test tests/repo/*.test.mjs` | 19 passed, 0 failed |
 | Renderer production build | `pnpm --dir apps/desktop exec vite build --config vite.renderer.config.mjs` | Passed; 3,086 modules transformed |
 | Native plugin regression | `dotnet run --project tests/plugin-regression/PluginRegression.csproj -c Release` | Passed all retry, fallback, concurrency, capability, and timeout scenarios |
 | Native plugin Release build | `dotnet build native/plugin/MemoQ.AI.Desktop.Plugin/MemoQ.AI.Desktop.Plugin.csproj -c Release` | Passed; 0 warnings, 0 errors |
-| Windows release gate | `tooling/scripts/package-windows.ps1 -Configuration Release` | Passed end to end; plugin and Preview helper Release builds, frozen install, 413 desktop tests, Electron Forge package, ZIP/7z archives, stable manifest, and packaged runtime smoke all completed |
+| Windows release gate | `tooling/scripts/package-windows.ps1 -Configuration Release` | Passed end to end; plugin and Preview helper Release builds, frozen install, 417 desktop tests, Electron Forge package, ZIP/7z archives, digest-bearing stable manifest, and packaged runtime smoke all completed |
+| Local artifact integrity | Independent `sha256sum` comparison against the generated stable manifest | Passed for both ZIP and 7z |
 | Packaged runtime smoke | `releasePackaging.test.js` with `MEMOQ_AI_PACKAGED_APP_DIR` pointing at the final package | 3 passed: version metadata, `app.asar`, and transitive worker dependencies |
 | Static diff check | `git diff --check` | Passed |
 
-The five skips in the general desktop run are explicit: two existing provider prompt tests tracked as Q1, plus three artifact tests that require `MEMOQ_AI_PACKAGED_APP_DIR`. The latter three were then executed against the freshly generated package and all passed. One final packaging attempt encountered a transient TLS disconnect while Forge was resolving its Electron payload; the local Electron archive matched the vendor checksum, and the immediate retry completed successfully. No test was disabled or bypassed.
+The five skips in the general desktop run are explicit: two existing provider prompt tests tracked as Q1, plus three artifact tests that require `MEMOQ_AI_PACKAGED_APP_DIR`. The latter three were then executed against the freshly generated package and all passed. No test was disabled or bypassed.
 
 ## Delivery Notes and Residual Risk
 
-- Work-item linkage: local audit goal implemented by commit `1db5657` and fast-forward merged into local `main`; no push, tag, GitHub Release, or deployment was created.
-- Release preparation: desktop metadata and release notes target `v1.0.24`; the local Windows release gate produced the portable ZIP, compact 7z, and stable update manifest. Publication remains intentionally pending.
-- Release note candidate: dependency installs and CI are now reproducible, packaging tests are hermetic, and desktop/update navigation fails closed at local and HTTPS trust boundaries.
-- Documentation sync: this audit is the durable technical record. No existing README contract advertised non-loopback gateway binding or HTTP update endpoints, so no user guide correction is required. Release behavior is summarized in `docs/release-notes/v1.0.24.md`.
+- Work-item linkage: the initial D1/T1/S1 slices shipped in `v1.0.24`; the dedicated U1 contract is specified in `specs/update-integrity-v1.0.25/spec.md` and targets `v1.0.25`.
+- Release preparation: desktop metadata and release notes target `v1.0.25`; the local Windows release gate produced and independently verified the portable ZIP, compact 7z, and digest-bearing stable update manifest.
+- Release note candidate: published portable assets now carry SHA-256 metadata, and application-managed installers fail closed unless their manifest digest, downloaded bytes, persisted path, and launch-time bytes agree.
+- Documentation sync: this audit and `docs/release-notes/v1.0.25.md` describe the byte-integrity boundary without representing it as asymmetric signing or Windows code signing.
 - Rollback watchpoint: D1 is one dependency contract and should be reverted as a unit; reverting only the lockfile or only frozen installs recreates drift.
 - Rollback watchpoint: if a legitimate remote gateway or HTTP staging use case appears, do not relax S1 globally. Introduce an authenticated, explicit mode with dedicated tests and migration documentation.
-- Remaining risk: update artifacts still lack digest/signature verification (U1), worker IPC can still wait indefinitely (R1), and standalone secret persistence still has a reversible fallback (S2).
+- Rollback watchpoint: do not weaken U1 to accept missing or mismatched digests for in-app installer launch; if an already published contract is defective, disable that path and fix forward with a new patch tag.
+- Remaining risk: artifacts are not asymmetrically signed or Windows code-signed (N1), worker IPC can still wait indefinitely (R1), and standalone secret persistence still has a reversible fallback (S2).
 - Remaining quality debt: the two provider `test.skip` cases remain visible as Q1; the renderer build still warns about a roughly 1.19 MB main chunk, consistent with M1/Q2 rather than a regression introduced here.
-- External CI was not triggered because release preparation did not push remote state; the workflow changes are proven locally by repository contract tests and equivalent Windows commands, but the first GitHub Actions run remains the final platform-specific confirmation.
+- Main CI remains the required gate before creating `v1.0.25`; the release workflow and published-asset digest comparison remain the authoritative remote evidence after the immutable tag is pushed.

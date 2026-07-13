@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,12 +13,18 @@ const {
   UPDATE_CHECK_FAILED_CODE,
   UPDATE_CHECK_TIMEOUT_CODE,
   UPDATE_CHECK_TIMEOUT_MESSAGE,
+  UPDATE_INTEGRITY_FAILED_CODE,
+  UPDATE_INTEGRITY_FAILED_MESSAGE,
   resolvePackagingMode
 } = require('../src/update/updateService');
 const { createAppPaths } = require('../src/shared/paths');
 
 function createTempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'memoq-ai-hub-update-'));
+}
+
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
 }
 
 function createMockFetch(responses = new Map(), calls = []) {
@@ -106,6 +113,17 @@ test('update service rejects unsafe manifest navigation and artifact fields', ()
       }
     }
   }), /Update asset URL must use HTTPS/);
+
+  assert.throws(() => normalizeManifest({
+    version: '1.0.1',
+    assets: {
+      installer: {
+        name: 'memoQ-AI-Hub-Setup.exe',
+        url: 'https://example.com/memoQ-AI-Hub-Setup.exe',
+        sha256: 'not-a-digest'
+      }
+    }
+  }), /Update asset SHA-256 must be a 64-character hexadecimal digest/);
 });
 
 test('update service rejects an HTTPS manifest request redirected to an unsafe final URL', async () => {
@@ -169,6 +187,62 @@ test('update service clears unsafe URLs from persisted state', () => {
     assert.equal(status.releaseNotesUrl, '');
     assert.equal(status.portableDownloadUrl, '');
     assert.equal(status.availableAssets.portable, null);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('update service preserves valid persisted digests and drops malformed persisted assets', () => {
+  const tempRoot = createTempRoot();
+  try {
+    const paths = createAppPaths({ appDataRoot: tempRoot });
+    const manifestUrl = 'https://example.com/latest.json';
+    const installerPath = path.join(paths.updateDownloadsDir, 'memoQ-AI-Hub-Setup.exe');
+    const installerSha256 = sha256('installer binary');
+    const persistedState = {
+      currentVersion: '1.0.0',
+      packagingMode: 'installed',
+      manifestUrl,
+      updateStatus: 'available',
+      latestVersion: '1.0.2',
+      downloadedArtifactPath: installerPath,
+      availableAssets: {
+        installer: {
+          name: 'memoQ-AI-Hub-Setup.exe',
+          url: 'https://example.com/memoQ-AI-Hub-Setup.exe',
+          sha256: installerSha256
+        }
+      }
+    };
+    fs.writeFileSync(paths.updateStatePath, JSON.stringify(persistedState), 'utf8');
+
+    const restored = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'installed',
+      fetch: createMockFetch()
+    }).getStatus();
+    assert.equal(restored.availableAssets.installer.sha256, installerSha256);
+
+    fs.writeFileSync(paths.updateStatePath, JSON.stringify({
+      ...persistedState,
+      availableAssets: {
+        installer: {
+          ...persistedState.availableAssets.installer,
+          sha256: 'malformed'
+        }
+      }
+    }), 'utf8');
+
+    const sanitized = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'installed',
+      fetch: createMockFetch()
+    }).getStatus();
+    assert.equal(sanitized.availableAssets.installer, null);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -400,7 +474,70 @@ test('update service accepts a slow manifest response within the timeout', async
   }
 });
 
-test('update service downloads installer assets only in installed mode', async () => {
+test('update service downloads matching installer bytes and re-verifies them before launch', async () => {
+  const tempRoot = createTempRoot();
+  try {
+    const paths = createAppPaths({ appDataRoot: tempRoot });
+    const manifestUrl = 'https://example.com/latest.json';
+    const installerUrl = 'https://example.com/memoQ-AI-Hub-Setup.exe';
+    const installerBytes = Buffer.from('installer binary');
+    const installerSha256 = sha256(installerBytes);
+    const service = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'installed',
+      fetch: createMockFetch(new Map([
+        [manifestUrl, {
+          json: {
+            version: '1.0.2',
+            assets: {
+              installer: {
+                name: 'memoQ-AI-Hub-Setup.exe',
+                url: installerUrl,
+                sha256: installerSha256
+              }
+            }
+          }
+        }],
+        [installerUrl, {
+          buffer: installerBytes
+        }]
+      ]))
+    });
+
+    await service.checkForUpdates({ manual: true });
+    const downloaded = await service.downloadInstallerUpdate();
+
+    assert.equal(downloaded.packagingMode, 'installed');
+    assert.equal(path.basename(downloaded.downloadedArtifactPath), 'memoQ-AI-Hub-Setup.exe');
+    assert.equal(fs.existsSync(downloaded.downloadedArtifactPath), true);
+    assert.equal(downloaded.availableAssets.installer.sha256, installerSha256);
+
+    const verified = await service.verifyDownloadedInstallerUpdate(downloaded.downloadedArtifactPath);
+    assert.deepEqual(verified, {
+      ok: true,
+      installerPath: downloaded.downloadedArtifactPath,
+      sha256: installerSha256
+    });
+
+    fs.writeFileSync(downloaded.downloadedArtifactPath, 'tampered installer');
+    await assert.rejects(
+      () => service.verifyDownloadedInstallerUpdate(downloaded.downloadedArtifactPath),
+      /does not match the manifest SHA-256/
+    );
+    const failed = service.getStatus();
+    assert.equal(failed.updateStatus, 'error');
+    assert.equal(failed.lastErrorCode, UPDATE_INTEGRITY_FAILED_CODE);
+    assert.equal(failed.lastError, UPDATE_INTEGRITY_FAILED_MESSAGE);
+    assert.equal(failed.downloadedArtifactPath, '');
+    assert.equal(fs.existsSync(downloaded.downloadedArtifactPath), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('update service rejects application-managed downloads without a manifest digest', async () => {
   const tempRoot = createTempRoot();
   try {
     const paths = createAppPaths({ appDataRoot: tempRoot });
@@ -423,18 +560,65 @@ test('update service downloads installer assets only in installed mode', async (
             }
           }
         }],
-        [installerUrl, {
-          buffer: 'installer binary'
-        }]
+        [installerUrl, { buffer: 'installer binary' }]
       ]))
     });
 
     await service.checkForUpdates({ manual: true });
-    const downloaded = await service.downloadInstallerUpdate();
+    await assert.rejects(
+      () => service.downloadInstallerUpdate(),
+      /SHA-256 is required for application-managed downloads/
+    );
 
-    assert.equal(downloaded.packagingMode, 'installed');
-    assert.equal(path.basename(downloaded.downloadedArtifactPath), 'memoQ-AI-Hub-Setup.exe');
-    assert.equal(fs.existsSync(downloaded.downloadedArtifactPath), true);
+    const status = service.getStatus();
+    assert.equal(status.updateStatus, 'error');
+    assert.equal(status.lastErrorCode, UPDATE_INTEGRITY_FAILED_CODE);
+    assert.equal(status.downloadedArtifactPath, '');
+    assert.equal(fs.existsSync(path.join(paths.updateDownloadsDir, 'memoQ-AI-Hub-Setup.exe')), false);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('update service rejects mismatched installer bytes without persisting them', async () => {
+  const tempRoot = createTempRoot();
+  try {
+    const paths = createAppPaths({ appDataRoot: tempRoot });
+    const manifestUrl = 'https://example.com/latest.json';
+    const installerUrl = 'https://example.com/memoQ-AI-Hub-Setup.exe';
+    const service = createUpdateService({
+      paths,
+      currentVersion: '1.0.0',
+      manifestUrl,
+      packagingMode: 'installed',
+      fetch: createMockFetch(new Map([
+        [manifestUrl, {
+          json: {
+            version: '1.0.2',
+            assets: {
+              installer: {
+                name: 'memoQ-AI-Hub-Setup.exe',
+                url: installerUrl,
+                sha256: sha256('expected installer')
+              }
+            }
+          }
+        }],
+        [installerUrl, { buffer: 'tampered installer' }]
+      ]))
+    });
+
+    await service.checkForUpdates({ manual: true });
+    await assert.rejects(
+      () => service.downloadInstallerUpdate(),
+      /does not match the manifest SHA-256/
+    );
+
+    const status = service.getStatus();
+    assert.equal(status.updateStatus, 'error');
+    assert.equal(status.lastErrorCode, UPDATE_INTEGRITY_FAILED_CODE);
+    assert.equal(status.lastError, UPDATE_INTEGRITY_FAILED_MESSAGE);
+    assert.equal(fs.existsSync(path.join(paths.updateDownloadsDir, 'memoQ-AI-Hub-Setup.exe')), false);
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -458,7 +642,8 @@ test('update service rejects an asset download redirected to an unsafe final URL
             assets: {
               installer: {
                 name: 'memoQ-AI-Hub-Setup.exe',
-                url: installerUrl
+                url: installerUrl,
+                sha256: sha256('installer binary')
               }
             }
           }

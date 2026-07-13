@@ -579,7 +579,15 @@ function registerIpcHandlers() {
       throw new Error('Installer path is required.');
     }
 
-    const openError = await shell.openPath(normalizedPath);
+    const verification = await invokeWorker('verifyDownloadedInstallerUpdate', {
+      installerPath: normalizedPath
+    });
+    const verifiedInstallerPath = String(verification?.installerPath || '').trim();
+    if (verification?.ok !== true || !verifiedInstallerPath) {
+      throw new Error('Downloaded installer integrity verification failed.');
+    }
+
+    const openError = await shell.openPath(verifiedInstallerPath);
     if (openError) {
       throw new Error(openError);
     }
@@ -587,7 +595,7 @@ function registerIpcHandlers() {
     setImmediate(() => {
       app.quit();
     });
-    return { ok: true, launched: true, installerPath: normalizedPath };
+    return { ok: true, launched: true, installerPath: verifiedInstallerPath };
   });
   ipcMain.handle('desktop:pick-directory', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {

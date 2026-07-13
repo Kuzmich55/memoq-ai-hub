@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +8,7 @@ export const DEFAULT_RELEASE_REPOSITORY = 'langlink-localization/memoq-ai-hub';
 export const STABLE_UPDATE_MANIFEST_NAME = 'memoq-ai-hub-updates-stable.json';
 export const PORTABLE_WINDOWS_ARTIFACT_NAME = 'memoq-ai-hub-win32-x64.zip';
 export const COMPACT_PORTABLE_WINDOWS_ARTIFACT_NAME = 'memoq-ai-hub-win32-x64.7z';
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
 function getRepoRoot() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -70,11 +72,34 @@ export function validateReleaseCommitOnRef(commitSha, refName = 'origin/main', r
   };
 }
 
+export function normalizeSha256(value, label = 'Asset SHA-256') {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!SHA256_HEX_PATTERN.test(normalized)) {
+    throw new Error(`${label} must be a 64-character hexadecimal digest.`);
+  }
+  return normalized;
+}
+
+export function calculateFileSha256(filePath) {
+  const normalizedPath = String(filePath || '').trim();
+  if (!normalizedPath) {
+    throw new Error('A release artifact path is required to calculate SHA-256.');
+  }
+
+  const resolvedPath = path.resolve(normalizedPath);
+  if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+    throw new Error(`Release artifact not found: ${resolvedPath}`);
+  }
+
+  return createHash('sha256').update(fs.readFileSync(resolvedPath)).digest('hex');
+}
+
 export function buildStableUpdateManifest({
   version = getDesktopPackageVersion(),
   repository = DEFAULT_RELEASE_REPOSITORY,
   publishedAt = '',
-  releaseNotes = ''
+  releaseNotes = '',
+  assetSha256 = {}
 } = {}) {
   const normalizedVersion = String(version || '').trim().replace(/^v/i, '');
   if (!normalizedVersion) {
@@ -85,6 +110,8 @@ export function buildStableUpdateManifest({
   const tag = `v${normalizedVersion}`;
   const releaseBaseUrl = `https://github.com/${normalizedRepository}/releases`;
   const downloadBaseUrl = `${releaseBaseUrl}/download/${tag}`;
+  const portableSha256 = normalizeSha256(assetSha256.portable, 'Portable ZIP SHA-256');
+  const portableCompactSha256 = normalizeSha256(assetSha256.portableCompact, 'Compact 7z SHA-256');
 
   return {
     version: normalizedVersion,
@@ -96,25 +123,37 @@ export function buildStableUpdateManifest({
     assets: {
       portable: {
         name: PORTABLE_WINDOWS_ARTIFACT_NAME,
-        url: `${downloadBaseUrl}/${PORTABLE_WINDOWS_ARTIFACT_NAME}`
+        url: `${downloadBaseUrl}/${PORTABLE_WINDOWS_ARTIFACT_NAME}`,
+        sha256: portableSha256
       },
       portableCompact: {
         name: COMPACT_PORTABLE_WINDOWS_ARTIFACT_NAME,
-        url: `${downloadBaseUrl}/${COMPACT_PORTABLE_WINDOWS_ARTIFACT_NAME}`
+        url: `${downloadBaseUrl}/${COMPACT_PORTABLE_WINDOWS_ARTIFACT_NAME}`,
+        sha256: portableCompactSha256
       }
     }
   };
 }
 
 export function writeStableUpdateManifest(outputPath, options = {}) {
-  const manifest = buildStableUpdateManifest(options);
-  const resolvedOutputPath = path.resolve(String(outputPath || ''));
-
-  if (!resolvedOutputPath) {
+  const normalizedOutputPath = String(outputPath || '').trim();
+  if (!normalizedOutputPath) {
     throw new Error('An output path is required to write the update manifest.');
   }
 
-  fs.mkdirSync(path.dirname(resolvedOutputPath), { recursive: true });
+  const resolvedOutputPath = path.resolve(normalizedOutputPath);
+  const outputDir = path.dirname(resolvedOutputPath);
+  const manifest = buildStableUpdateManifest({
+    ...options,
+    assetSha256: {
+      portable: options.assetSha256?.portable
+        || calculateFileSha256(path.join(outputDir, PORTABLE_WINDOWS_ARTIFACT_NAME)),
+      portableCompact: options.assetSha256?.portableCompact
+        || calculateFileSha256(path.join(outputDir, COMPACT_PORTABLE_WINDOWS_ARTIFACT_NAME))
+    }
+  });
+
+  fs.mkdirSync(outputDir, { recursive: true });
   fs.writeFileSync(resolvedOutputPath, JSON.stringify(manifest, null, 2), 'utf8');
   return {
     outputPath: resolvedOutputPath,

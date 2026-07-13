@@ -220,6 +220,9 @@ const requestHandlers = {
   downloadInstallerUpdate(payload) {
     return requireRuntime().downloadInstallerUpdate(payload?.versionOrAssetId);
   },
+  verifyDownloadedInstallerUpdate(payload) {
+    return requireRuntime().verifyDownloadedInstallerUpdate(payload?.installerPath);
+  },
   preparePortableUpdate(payload) {
     return requireRuntime().preparePortableUpdate(payload?.downloadedFile, payload?.targetDir);
   },

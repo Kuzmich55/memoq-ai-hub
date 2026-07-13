@@ -1,4 +1,5 @@
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -17,9 +18,12 @@ const AVAILABLE_UPDATE_STATUSES = new Set(['available', 'downloading', 'prepared
 const DEFAULT_MANIFEST_TIMEOUT_MS = 12_000;
 const UPDATE_CHECK_FAILED_CODE = 'UPDATE_CHECK_FAILED';
 const UPDATE_CHECK_TIMEOUT_CODE = 'UPDATE_CHECK_TIMEOUT';
+const UPDATE_INTEGRITY_FAILED_CODE = 'UPDATE_INTEGRITY_FAILED';
 const UPDATE_CHECK_FAILED_MESSAGE = 'Unable to check for updates. Please try again later.';
 const UPDATE_CHECK_TIMEOUT_MESSAGE = 'Update check timed out. Please try again later.';
+const UPDATE_INTEGRITY_FAILED_MESSAGE = 'Update package integrity verification failed.';
 const PORTABLE_IN_APP_UPDATE_DISABLED_MESSAGE = 'Portable builds use a browser download page instead of downloading updates inside the app.';
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -159,6 +163,37 @@ function normalizeUpdateCheckError(error) {
   };
 }
 
+function createUpdateIntegrityError(message) {
+  const error = new Error(String(message || UPDATE_INTEGRITY_FAILED_MESSAGE));
+  error.code = UPDATE_INTEGRITY_FAILED_CODE;
+  return error;
+}
+
+function normalizeAssetSha256(value, { allowEmpty = true } = {}) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized && allowEmpty) {
+    return '';
+  }
+  if (!SHA256_HEX_PATTERN.test(normalized)) {
+    throw createUpdateIntegrityError('Update asset SHA-256 must be a 64-character hexadecimal digest.');
+  }
+  return normalized;
+}
+
+function calculateBufferSha256(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function verifyBufferSha256(buffer, expectedSha256) {
+  const expected = normalizeAssetSha256(expectedSha256, { allowEmpty: false });
+  const actual = calculateBufferSha256(buffer);
+  const matches = crypto.timingSafeEqual(Buffer.from(actual, 'hex'), Buffer.from(expected, 'hex'));
+  if (!matches) {
+    throw createUpdateIntegrityError('Downloaded update package does not match the manifest SHA-256.');
+  }
+  return actual;
+}
+
 function normalizeAsset(asset = {}) {
   if (!asset || typeof asset !== 'object') {
     return null;
@@ -176,6 +211,7 @@ function normalizeAsset(asset = {}) {
   return {
     name,
     url,
+    sha256: normalizeAssetSha256(asset.sha256),
     contentType: String(asset.contentType || '').trim(),
     size: Number.isFinite(Number(asset.size)) ? Number(asset.size) : null
   };
@@ -288,15 +324,18 @@ function createUpdateService(options = {}) {
   });
   const extractArchive = options.extractArchive || expandArchiveWithPowerShell;
   const appPaths = options.paths || {};
+  const updatesDir = appPaths.updatesDir || path.join(process.cwd(), 'updates');
+  const updateDownloadsDir = appPaths.updateDownloadsDir || path.join(updatesDir, 'downloads');
+  const preparedUpdatesDir = appPaths.preparedUpdatesDir || path.join(updatesDir, 'prepared');
 
-  ensureDir(appPaths.updatesDir || path.join(process.cwd(), 'updates'));
-  ensureDir(appPaths.updateDownloadsDir || path.join(process.cwd(), 'updates', 'downloads'));
-  ensureDir(appPaths.preparedUpdatesDir || path.join(process.cwd(), 'updates', 'prepared'));
+  ensureDir(updatesDir);
+  ensureDir(updateDownloadsDir);
+  ensureDir(preparedUpdatesDir);
 
   const persistedStatePath = String(
     options.updateStatePath
     || appPaths.updateStatePath
-    || path.join(appPaths.updatesDir || process.cwd(), 'update-state.json')
+    || path.join(updatesDir, 'update-state.json')
   );
 
   function readPersistedState() {
@@ -418,13 +457,55 @@ function createUpdateService(options = {}) {
     return asset;
   }
 
+  function markIntegrityFailure(error, artifactPath = '') {
+    const normalizedError = error?.code === UPDATE_INTEGRITY_FAILED_CODE
+      ? error
+      : createUpdateIntegrityError(error?.message || error);
+    const normalizedArtifactPath = String(artifactPath || '').trim();
+    const resolvedArtifactPath = normalizedArtifactPath ? path.resolve(normalizedArtifactPath) : '';
+    const artifactIsManaged = resolvedArtifactPath
+      && path.dirname(resolvedArtifactPath) === path.resolve(updateDownloadsDir);
+    if (artifactIsManaged && fsImpl.existsSync(resolvedArtifactPath)) {
+      try {
+        fsImpl.rmSync(resolvedArtifactPath, { force: true });
+      } catch (removeError) {
+        logger.warn('update-integrity-cleanup-failed', 'Unable to remove an untrusted update package.', {
+          artifactPath: resolvedArtifactPath,
+          errorMessage: String(removeError?.message || removeError)
+        });
+      }
+    }
+    setState({
+      updateStatus: 'error',
+      lastError: UPDATE_INTEGRITY_FAILED_MESSAGE,
+      lastErrorCode: UPDATE_INTEGRITY_FAILED_CODE,
+      downloadedArtifactPath: ''
+    });
+    return normalizedError;
+  }
+
+  function getRequiredAssetSha256(asset) {
+    if (!asset?.sha256) {
+      throw createUpdateIntegrityError('Update asset SHA-256 is required for application-managed downloads.');
+    }
+    return normalizeAssetSha256(asset.sha256, { allowEmpty: false });
+  }
+
   async function downloadAsset(kind) {
     const asset = getRequestedAsset(kind);
-    const destinationPath = path.join(appPaths.updateDownloadsDir, asset.name);
+    const destinationPath = path.join(updateDownloadsDir, asset.name);
+    let expectedSha256;
+
+    try {
+      expectedSha256 = getRequiredAssetSha256(asset);
+    } catch (error) {
+      throw markIntegrityFailure(error);
+    }
 
     setState({
       updateStatus: 'downloading',
-      lastError: ''
+      lastError: '',
+      lastErrorCode: ''
     });
 
     const response = await fetchImpl(asset.url);
@@ -436,18 +517,24 @@ function createUpdateService(options = {}) {
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
+    try {
+      verifyBufferSha256(buffer, expectedSha256);
+    } catch (error) {
+      throw markIntegrityFailure(error, destinationPath);
+    }
     fsImpl.writeFileSync(destinationPath, buffer);
 
     return setState({
       updateStatus: 'available',
       downloadedArtifactPath: destinationPath,
-      lastError: ''
+      lastError: '',
+      lastErrorCode: ''
     });
   }
 
   function buildPreparedDirectory(version) {
     const safeVersion = String(version || 'prepared').replace(/[^0-9A-Za-z._-]+/g, '-');
-    return path.join(appPaths.preparedUpdatesDir, `memoq-ai-hub-v${safeVersion}`);
+    return path.join(preparedUpdatesDir, `memoq-ai-hub-v${safeVersion}`);
   }
 
   function isSquirrelFirstRun() {
@@ -540,6 +627,41 @@ function createUpdateService(options = {}) {
       }
       return downloadAsset('installer');
     },
+    async verifyDownloadedInstallerUpdate(installerPath) {
+      if (packagingMode !== 'installed') {
+        throw new Error('Installer update verification is only available in installed mode.');
+      }
+
+      const asset = state.availableAssets?.installer;
+      const persistedPath = String(state.downloadedArtifactPath || '').trim();
+      const requestedPath = String(installerPath || persistedPath).trim();
+
+      try {
+        const expectedSha256 = getRequiredAssetSha256(asset);
+        if (!asset?.name || !persistedPath || !requestedPath) {
+          throw createUpdateIntegrityError('A verified downloaded installer is required before launch.');
+        }
+
+        const expectedPath = path.resolve(updateDownloadsDir, asset.name);
+        const resolvedPersistedPath = path.resolve(persistedPath);
+        const resolvedRequestedPath = path.resolve(requestedPath);
+        if (resolvedPersistedPath !== expectedPath || resolvedRequestedPath !== expectedPath) {
+          throw createUpdateIntegrityError('Downloaded installer path does not match the current update asset.');
+        }
+        if (!fsImpl.existsSync(expectedPath)) {
+          throw createUpdateIntegrityError(`Downloaded installer not found: ${expectedPath}`);
+        }
+
+        const actualSha256 = verifyBufferSha256(fsImpl.readFileSync(expectedPath), expectedSha256);
+        return {
+          ok: true,
+          installerPath: expectedPath,
+          sha256: actualSha256
+        };
+      } catch (error) {
+        throw markIntegrityFailure(error, persistedPath);
+      }
+    },
     async preparePortableUpdate(downloadedFile, targetDir) {
       if (packagingMode === 'portable') {
         throw new Error(PORTABLE_IN_APP_UPDATE_DISABLED_MESSAGE);
@@ -581,8 +703,10 @@ module.exports = {
   DEFAULT_MANIFEST_TIMEOUT_MS,
   UPDATE_CHECK_FAILED_CODE,
   UPDATE_CHECK_TIMEOUT_CODE,
+  UPDATE_INTEGRITY_FAILED_CODE,
   UPDATE_CHECK_FAILED_MESSAGE,
   UPDATE_CHECK_TIMEOUT_MESSAGE,
+  UPDATE_INTEGRITY_FAILED_MESSAGE,
   compareVersions,
   createUpdateService,
   getDefaultManifestUrl,

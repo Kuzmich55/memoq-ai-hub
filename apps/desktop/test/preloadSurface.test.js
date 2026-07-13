@@ -23,3 +23,20 @@ test('main process validates external URLs before invoking the operating system'
   assert.match(source, /shell\.openExternal\(normalizedUrl\)/);
   assert.doesNotMatch(source, /shell\.openExternal\(requestedUrl\)/);
 });
+
+test('main process re-verifies downloaded installers before invoking the operating system', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '../src/main.js'), 'utf8');
+  const handlerStart = source.indexOf("ipcMain.handle('desktop:launch-downloaded-installer-update'");
+  const handlerEnd = source.indexOf("ipcMain.handle('desktop:pick-directory'", handlerStart);
+
+  assert.notEqual(handlerStart, -1);
+  assert.notEqual(handlerEnd, -1);
+  const handlerSource = source.slice(handlerStart, handlerEnd);
+  assert.match(handlerSource, /invokeWorker\('verifyDownloadedInstallerUpdate'/);
+  assert.match(handlerSource, /shell\.openPath\(verifiedInstallerPath\)/);
+  assert.doesNotMatch(handlerSource, /shell\.openPath\(normalizedPath\)/);
+  assert.ok(
+    handlerSource.indexOf("invokeWorker('verifyDownloadedInstallerUpdate'")
+      < handlerSource.indexOf('shell.openPath(verifiedInstallerPath)')
+  );
+});

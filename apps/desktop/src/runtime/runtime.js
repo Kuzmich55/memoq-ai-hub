@@ -3863,6 +3863,9 @@ async function createRuntime(options = {}) {
     async downloadInstallerUpdate(versionOrAssetId) {
       return updateService.downloadInstallerUpdate(versionOrAssetId);
     },
+    async verifyDownloadedInstallerUpdate(installerPath) {
+      return updateService.verifyDownloadedInstallerUpdate(installerPath);
+    },
     async preparePortableUpdate(downloadedFile, targetDir) {
       return updateService.preparePortableUpdate(downloadedFile, targetDir);
     },
