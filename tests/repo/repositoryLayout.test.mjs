@@ -5,9 +5,17 @@ import path from 'node:path';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 
-function readFile(relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
+function normalizeLineEndings(content) {
+  return content.replace(/\r\n?/g, '\n');
 }
+
+function readFile(relativePath) {
+  return normalizeLineEndings(fs.readFileSync(path.join(repoRoot, relativePath), 'utf8'));
+}
+
+test('repository text fixtures normalize platform line endings', () => {
+  assert.equal(normalizeLineEndings('one\r\ntwo\rthree\n'), 'one\ntwo\nthree\n');
+});
 
 test('repository layout exposes the governed top-level directories', () => {
   const requiredDirs = [
