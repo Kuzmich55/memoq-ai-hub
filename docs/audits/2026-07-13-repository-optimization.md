@@ -205,7 +205,7 @@ The large runtime/renderer files and 93 catch sites increase review cost. Existi
 | Renderer production build | `pnpm --dir apps/desktop exec vite build --config vite.renderer.config.mjs` | Passed; 3,086 modules transformed |
 | Native plugin regression | `dotnet run --project tests/plugin-regression/PluginRegression.csproj -c Release` | Passed all retry, fallback, concurrency, capability, and timeout scenarios |
 | Native plugin Release build | `dotnet build native/plugin/MemoQ.AI.Desktop.Plugin/MemoQ.AI.Desktop.Plugin.csproj -c Release` | Passed; 0 warnings, 0 errors |
-| Windows package | `pnpm --dir apps/desktop run package` | Electron Forge x64 package passed; Preview helper build had 0 warnings and 0 errors |
+| Windows release gate | `tooling/scripts/package-windows.ps1 -Configuration Release` | Passed end to end; plugin and Preview helper Release builds, frozen install, 413 desktop tests, Electron Forge package, ZIP/7z archives, stable manifest, and packaged runtime smoke all completed |
 | Packaged runtime smoke | `releasePackaging.test.js` with `MEMOQ_AI_PACKAGED_APP_DIR` pointing at the final package | 3 passed: version metadata, `app.asar`, and transitive worker dependencies |
 | Static diff check | `git diff --check` | Passed |
 
@@ -213,11 +213,12 @@ The five skips in the general desktop run are explicit: two existing provider pr
 
 ## Delivery Notes and Residual Risk
 
-- Work-item linkage: local audit goal on branch `codex/repo-audit-high-roi`; no issue, PR, commit, push, release, or deployment was created.
+- Work-item linkage: local audit goal implemented by commit `1db5657` and fast-forward merged into local `main`; no push, tag, GitHub Release, or deployment was created.
+- Release preparation: desktop metadata and release notes target `v1.0.24`; the local Windows release gate produced the portable ZIP, compact 7z, and stable update manifest. Publication remains intentionally pending.
 - Release note candidate: dependency installs and CI are now reproducible, packaging tests are hermetic, and desktop/update navigation fails closed at local and HTTPS trust boundaries.
-- Documentation sync: this audit is the durable technical record. No existing README contract advertised non-loopback gateway binding or HTTP update endpoints, so no user guide correction is required. Add a versioned release note only when these changes are scheduled for a release.
+- Documentation sync: this audit is the durable technical record. No existing README contract advertised non-loopback gateway binding or HTTP update endpoints, so no user guide correction is required. Release behavior is summarized in `docs/release-notes/v1.0.24.md`.
 - Rollback watchpoint: D1 is one dependency contract and should be reverted as a unit; reverting only the lockfile or only frozen installs recreates drift.
 - Rollback watchpoint: if a legitimate remote gateway or HTTP staging use case appears, do not relax S1 globally. Introduce an authenticated, explicit mode with dedicated tests and migration documentation.
 - Remaining risk: update artifacts still lack digest/signature verification (U1), worker IPC can still wait indefinitely (R1), and standalone secret persistence still has a reversible fallback (S2).
 - Remaining quality debt: the two provider `test.skip` cases remain visible as Q1; the renderer build still warns about a roughly 1.19 MB main chunk, consistent with M1/Q2 rather than a regression introduced here.
-- External CI was not triggered because the requested scope forbids remote writes; the workflow changes are proven locally by repository contract tests and equivalent Windows commands, but the first GitHub Actions run remains the final platform-specific confirmation.
+- External CI was not triggered because release preparation did not push remote state; the workflow changes are proven locally by repository contract tests and equivalent Windows commands, but the first GitHub Actions run remains the final platform-specific confirmation.
